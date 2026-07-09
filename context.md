@@ -22,9 +22,10 @@ C4Context
     Rel(user, orch, "задаёт вопрос")
     Rel(orch, agents, "делегирует задачу специализированному агенту")
     Rel(agents, odl, "tool call")
-    Rel(odl, pravo, "ингест + поиск НПА")
-    Rel(odl, stub, "ингест + поиск НПА")
-    Rel(agents, web, "ищет в веб, если слой ODL не нашёл НПА")
+    Rel(odl, agents, "structured answer + provenance + разложенные сигналы уверенности")
+    Rel(odl, pravo, "получает нормативно-правовые акты (НПА)")
+    Rel(odl, stub, "получает нормативно-правовые акты (НПА)")
+    Rel(agents, web, "fallback - ищет в веб, если слой ODL не нашёл НПА")
     
     UpdateLayoutConfig($c4ShapeInRow="2")
 ```
