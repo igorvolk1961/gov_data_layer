@@ -64,7 +64,7 @@ gov-data-layer/
 ├── SPEC.md                      # Спецификация: цель, границы, решения, компромиссы
 ├── plan.md                      # Этот файл
 ├── context.mmd                  # C4 Context
-├── container.mmd                # C4 Contapyproject.toml iner
+├── container.mmd                # C4 Container
 ├── examples/
 │   └── SKILL.md           # Пример Agent Skill (инструкция для агента)
 ├── core/                        # Ядро слоя (механизм)
@@ -148,7 +148,8 @@ gov-data-layer/
   - `Source` — источник
   - `Citation` — ссылка с span
   - `ConfidenceSignals` — разложенные сигналы уверенности
-  - `GroundedAnswer` — итоговый ответ с provenance
+  - `TopicNode` — узел иерархического рубрикатора
+  - `TocNode` — узел оглавления документа
 - Две оси времени: `ingest_date` + `legal_status` (valid_from/valid_to)
 - Интерфейс `SourceAdapter` (Protocol): `search()`, `get()`, `normalize()`, `ingest()`
 - Типизированные ошибки: `NotFoundError`, `SourceUnavailableError`, `InvalidInputError`, `InternalError`
@@ -187,7 +188,8 @@ gov-data-layer/
 - MCP-сервер с инструментами:
   - `search_official_sources(query, context)` — компактные попадания
   - `get_source(source_id)` — полная карточка акта
-  - `get_grounded_answer(question, context)` — структурированный ответ с provenance
+  - `list_topics(parent_id, query)` — просмотр иерархического рубрикатора (SQLite)
+  - `get_toc(document_id, parent_section_id, query)` — навигация по оглавлению документа (SQLite)
 - Строгие JSON-схемы входа/выхода (Pydantic)
 - Роутер: выбор источника по контексту (регион, тема), агент источники не называет
 - Контракт ответа: суть + цитата + источник + дата + юр.статус + разложенные сигналы уверенности + границы

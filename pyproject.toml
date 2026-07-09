@@ -1,5 +1,11 @@
-# pyproject.toml
+[build-system]
+requires = ["setuptools>=68.0.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
+name = "gov-data-layer"
+version = "0.1.0"
+description = "Official Data Layer for AI Agents — переносимый слой официальных данных"
 requires-python = ">=3.10"
 dependencies = [
     "qdrant-client>=1.7.0",
@@ -11,8 +17,8 @@ dependencies = [
     "httpx>=0.25.0",
     "beautifulsoup4>=4.12.0",
     "lxml>=4.9.0",
-    "tomli>=2.0.0; python_version < '3.11'",  # backport для 3.10
-    "exceptiongroup>=1.1.0; python_version < '3.11'",  # backport для 3.10
+    "tomli>=2.0.0; python_version < '3.11'",
+    "exceptiongroup>=1.1.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -23,4 +29,72 @@ dev = [
     "mypy>=1.5.0",
     "detect-secrets>=1.4.0",
     "langfuse>=2.0.0",
+]
+
+[project.scripts]
+odl-server = "core.main:main"
+
+[tool.setuptools.packages.find]
+include = ["core*", "adapters*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "UP",  # pyupgrade
+    "B",  # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "ARG",  # flake8-unused-arguments
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line-length covered by formatter
+    "RUF001", # allow non-ASCII (Cyrillic) in string literals
+    "RUF002", # allow non-ASCII (Cyrillic) in docstrings
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+disallow_any_unimported = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["core.models.*"]
+# Pydantic v2 dynamic model creation triggers false positives in mypy
+# TODO(#XX): Revisit when mypy>=1.10 improves Pydantic plugin support
+disallow_untyped_defs = false
+disallow_any_unimported = false
+
+[tool.pytest.ini_options]
+minversion = "7.4"
+testpaths = ["tests"]
+asyncio_mode = "strict"
+python_files = ["test_*.py"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "contract: Contract tests",
+    "slow: Slow tests (e.g. integration with external services)",
 ]

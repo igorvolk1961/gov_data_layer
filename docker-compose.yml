@@ -34,7 +34,7 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # Observability
+  # Observability (опционально — можно отключить через profile)
   langfuse:
     image: langfuse/langfuse:2
     container_name: odl-langfuse
@@ -42,9 +42,9 @@ services:
       - "3000:3000"
     environment:
       - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
-      - NEXTAUTH_SECRET=mysecret
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in .env}
       - NEXTAUTH_URL=http://localhost:3000
-      - SALT=mysalt
+      - SALT=${SALT:?Set SALT in .env}
     depends_on:
       langfuse-db:
         condition: service_healthy
@@ -90,14 +90,17 @@ services:
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - DATABASE_URL=sqlite:///data/official_data.db
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_CLEAR_ON_START=${LOG_CLEAR_ON_START:-false}
+      - LOG_FILE=${LOG_FILE:-data/traces.log}
     volumes:
       - app_data:/app/data  # SQLite файл + логи
-      - ./adapters:/app/adapters:ro  # Адаптеры монтируются read-only
+      - ./adapters:/app/adapters:ro  # Read-only: переопределяет COPY из образа. Для разработки адаптеров используйте docker-compose.override.yml без :ro
     depends_on:
       qdrant:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # langfuse intentionally omitted — app handles unavailability gracefully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
