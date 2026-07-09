@@ -73,6 +73,17 @@ class StubAdapter(SourceAdapter):
         query: str,
         context: SearchContext | None = None,
     ) -> list[SearchResult]:
+        """Search stub documents by title/summary.
+
+        Args:
+            query: Search query (case-insensitive substring match).
+                   Empty string matches all documents.
+            context: Optional search context. If filters are provided,
+                     returns empty (stub does not support filtering).
+
+        Returns:
+            List of matching SearchResult objects.
+        """
         if context is not None and (context.region or context.topic or context.organization):
             logger.warning(
                 "StubAdapter does not support context filters — returning empty results",
@@ -82,25 +93,26 @@ class StubAdapter(SourceAdapter):
         results: list[SearchResult] = []
         now = datetime.now(timezone.utc)
         for doc in self._documents.values():
-            if query.lower() in doc.title.lower() or query.lower() in (doc.summary or "").lower():
-                results.append(
-                    SearchResult(
-                        id=doc.id,
-                        title=doc.title,
-                        snippet=(doc.summary or "")[:200],
-                        url=doc.url,
-                        source_name=doc.source.name,
-                        ingest_date=doc.ingest_date,
+            if query and query.lower() not in doc.title.lower() and query.lower() not in (doc.summary or "").lower():
+                continue
+            results.append(
+                SearchResult(
+                    id=doc.id,
+                    title=doc.title,
+                    snippet=(doc.summary or "")[:200],
+                    url=doc.url,
+                    source_name=doc.source.name,
+                    ingest_date=doc.ingest_date,
+                    legal_status=doc.legal_status,
+                    confidence=ConfidenceSignals(
+                        retrieval_relevance=0.95,
+                        extraction_confidence=1.0,
+                        data_freshness=now,
                         legal_status=doc.legal_status,
-                        confidence=ConfidenceSignals(
-                            retrieval_relevance=0.95,
-                            extraction_confidence=1.0,
-                            data_freshness=now,
-                            legal_status=doc.legal_status,
-                            source_availability=SourceAvailability.AVAILABLE,
-                        ),
-                    )
+                        source_availability=SourceAvailability.AVAILABLE,
+                    ),
                 )
+            )
         return results
 
     async def get(self, document_id: str) -> OfficialDocument:
@@ -114,6 +126,9 @@ class StubAdapter(SourceAdapter):
         doc_id = raw.get("id")
         if doc_id is None:
             raise InvalidInputError("Missing required field 'id' in raw data")
+        url = raw.get("url")
+        if url is None:
+            raise InvalidInputError("Missing required field 'url' in raw data")
         return OfficialDocument(
             id=str(doc_id),
             title=str(raw.get("title", "Untitled")),
@@ -122,7 +137,7 @@ class StubAdapter(SourceAdapter):
                 name="Stub Source",
                 url="https://example.gov.ru",
             ),
-            url=str(raw.get("url", "")),
+            url=str(url),
         )
 
     async def ingest(self) -> int:

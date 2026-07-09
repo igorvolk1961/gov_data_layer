@@ -106,7 +106,7 @@ class _Span:
         if self._langfuse_span is not None:
             self._langfuse_span.update(output=data)
 
-    def set_error(self, error: Exception) -> None:
+    def set_error(self, error: BaseException) -> None:
         """Record span error."""
         self._data.error = f"{type(error).__name__}: {error}"
         self._data.level = "ERROR"
@@ -124,12 +124,8 @@ class _Span:
     ) -> None:
         self._data.end_time = datetime.now(timezone.utc).isoformat()
         if exc_val and not self._data.error:
-            if isinstance(exc_val, Exception):
-                self.set_error(exc_val)
-            else:
-                # Record non-Exception BaseExceptions (e.g. KeyboardInterrupt)
-                self._data.error = f"{type(exc_val).__name__}: {exc_val}"
-                self._data.level = "ERROR"
+            # Record all exceptions (Exception and BaseException like KeyboardInterrupt)
+            self.set_error(exc_val)
         if self._write_callback:
             self._write_callback(self._data)
 

@@ -1,0 +1,446 @@
+"""Unit tests for canonical Pydantic models (core/models/models.py).
+
+Tests cover:
+- Field validation (bounds, defaults, types)
+- Nested model construction
+- Enum values
+- Serialization / deserialization
+- Edge cases (empty strings, None values, boundary values)
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+from pydantic import ValidationError
+
+from core.models.models import (
+    Citation,
+    ConfidenceSignals,
+    LegalStatus,
+    OfficialDocument,
+    SearchContext,
+    SearchResult,
+    Source,
+    SourceAvailability,
+    TocNode,
+    TopicNode,
+)
+
+
+# ──────────────────────────────────────────────
+#  Source
+# ──────────────────────────────────────────────
+
+
+class TestSource:
+    def test_minimal(self) -> None:
+        s = Source(id="src-1", name="Test Source", url="https://example.gov")
+        assert s.id == "src-1"
+        assert s.name == "Test Source"
+        assert s.url == "https://example.gov"
+        assert s.jurisdiction is None
+
+    def test_with_jurisdiction(self) -> None:
+        s = Source(
+            id="src-1",
+            name="Test Source",
+            url="https://example.gov",
+            jurisdiction="федеральная",
+        )
+        assert s.jurisdiction == "федеральная"
+
+class TestEmptyIdRejection:
+    """All models with min_length=1 on their id field should reject empty strings."""
+
+    def test_source_empty_id(self) -> None:
+        with pytest.raises(ValidationError):
+            Source(id="", name="Test", url="http://example.com")
+
+    def test_official_document_empty_id(self) -> None:
+        source = Source(id="s", name="S", url="http://example.com")
+        with pytest.raises(ValidationError):
+            OfficialDocument(id="", title="Test", source=source, url="http://example.com/doc")
+
+    def test_search_result_empty_id(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.5,
+            data_freshness=now,
+            legal_status=LegalStatus.UNKNOWN,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        with pytest.raises(ValidationError):
+            SearchResult(
+                id="",
+                title="T",
+                snippet="S",
+                url="http://example.com",
+                source_name="Src",
+                ingest_date=now,
+                legal_status=LegalStatus.UNKNOWN,
+                confidence=cs,
+            )
+
+    def test_topic_node_empty_id(self) -> None:
+        with pytest.raises(ValidationError):
+            TopicNode(id="", name="N", parent_id="root")
+
+    def test_toc_node_empty_id(self) -> None:
+        with pytest.raises(ValidationError):
+            TocNode(id="", document_id="d", title="T", parent_id="root", level=0)
+
+
+# ──────────────────────────────────────────────
+#  Citation
+# ──────────────────────────────────────────────
+
+
+class TestCitation:
+    def test_minimal(self) -> None:
+        c = Citation(text="quote", source_id="doc-1", url="http://example.com")
+        assert c.text == "quote"
+        assert c.span_start is None
+        assert c.span_end is None
+
+    def test_with_spans(self) -> None:
+        c = Citation(
+            text="quote",
+            source_id="doc-1",
+            url="http://example.com",
+            span_start=10,
+            span_end=42,
+        )
+        assert c.span_start == 10
+        assert c.span_end == 42
+
+
+# ──────────────────────────────────────────────
+#  ConfidenceSignals
+# ──────────────────────────────────────────────
+
+
+class TestConfidenceSignals:
+    def test_minimal(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.85,
+            data_freshness=now,
+            legal_status=LegalStatus.ACTIVE,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        assert cs.retrieval_relevance == 0.85
+        assert cs.extraction_confidence == 1.0  # default
+        assert cs.data_freshness == now
+        assert cs.legal_status == LegalStatus.ACTIVE
+        assert cs.source_availability == SourceAvailability.AVAILABLE
+
+    @pytest.mark.parametrize("value", [-0.01, 1.01, 1.5, -1.0])
+    def test_retrieval_relevance_out_of_bounds(self, value: float) -> None:
+        now = datetime.now(timezone.utc)
+        with pytest.raises(ValidationError):
+            ConfidenceSignals(
+                retrieval_relevance=value,
+                data_freshness=now,
+                legal_status=LegalStatus.ACTIVE,
+                source_availability=SourceAvailability.AVAILABLE,
+            )
+
+    @pytest.mark.parametrize("value", [0.0, 0.5, 1.0])
+    def test_retrieval_relevance_boundary(self, value: float) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=value,
+            data_freshness=now,
+            legal_status=LegalStatus.ACTIVE,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        assert cs.retrieval_relevance == value
+
+    def test_extraction_confidence_default(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.5,
+            data_freshness=now,
+            legal_status=LegalStatus.ACTIVE,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        assert cs.extraction_confidence == 1.0
+
+
+# ──────────────────────────────────────────────
+#  OfficialDocument
+# ──────────────────────────────────────────────
+
+
+class TestOfficialDocument:
+    def test_minimal(self) -> None:
+        source = Source(id="src", name="Src", url="http://example.com")
+        doc = OfficialDocument(id="doc-1", title="Test", source=source, url="http://example.com/doc")
+        assert doc.id == "doc-1"
+        assert doc.title == "Test"
+        assert doc.source == source
+        assert doc.summary is None
+        assert doc.jurisdiction is None
+        assert doc.topic is None
+        assert doc.organization is None
+        assert doc.legal_status == LegalStatus.UNKNOWN
+        assert doc.valid_from is None
+        assert doc.valid_to is None
+        # ingest_date should be auto-set to now (UTC)
+        assert isinstance(doc.ingest_date, datetime)
+        assert doc.ingest_date.tzinfo is not None
+
+    def test_with_all_fields(self) -> None:
+        now = datetime.now(timezone.utc)
+        source = Source(id="src", name="Src", url="http://example.com")
+        doc = OfficialDocument(
+            id="doc-1",
+            title="Test",
+            source=source,
+            url="http://example.com/doc",
+            summary="A summary",
+            jurisdiction="федеральная",
+            topic="налоги",
+            organization="ФНС",
+            ingest_date=now,
+            valid_from=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
+            legal_status=LegalStatus.ACTIVE,
+        )
+        assert doc.summary == "A summary"
+        assert doc.jurisdiction == "федеральная"
+        assert doc.topic == "налоги"
+        assert doc.organization == "ФНС"
+        assert doc.ingest_date == now
+        assert doc.valid_from == datetime(2025, 1, 1, tzinfo=timezone.utc)
+        assert doc.valid_to == datetime(2026, 12, 31, tzinfo=timezone.utc)
+        assert doc.legal_status == LegalStatus.ACTIVE
+
+    def test_valid_to_none_indefinite(self) -> None:
+        source = Source(id="src", name="Src", url="http://example.com")
+        doc = OfficialDocument(
+            id="doc-1",
+            title="Test",
+            source=source,
+            url="http://example.com/doc",
+            valid_to=None,
+        )
+        assert doc.valid_to is None
+
+    def test_serialize_to_dict(self) -> None:
+        source = Source(id="src", name="Src", url="http://example.com")
+        doc = OfficialDocument(id="doc-1", title="Test", source=source, url="http://example.com/doc")
+        d = doc.model_dump()
+        assert d["id"] == "doc-1"
+        assert d["title"] == "Test"
+        assert d["source"]["id"] == "src"
+        assert d["legal_status"] == "unknown"
+
+    def test_serialize_to_json(self) -> None:
+        source = Source(id="src", name="Src", url="http://example.com")
+        doc = OfficialDocument(id="doc-1", title="Test", source=source, url="http://example.com/doc")
+        json_str = doc.model_dump_json()
+        # Pydantic v2 serializes without extra spaces
+        assert '"id":"doc-1"' in json_str
+        assert '"legal_status":"unknown"' in json_str
+        # datetime should be ISO format
+        assert "ingest_date" in json_str
+
+    def test_deserialize_from_dict(self) -> None:
+        now = datetime.now(timezone.utc)
+        data = {
+            "id": "doc-1",
+            "title": "Test",
+            "source": {"id": "src", "name": "Src", "url": "http://example.com"},
+            "url": "http://example.com/doc",
+            "ingest_date": now.isoformat(),
+            "legal_status": "active",
+        }
+        doc = OfficialDocument.model_validate(data)
+        assert doc.id == "doc-1"
+        assert doc.legal_status == LegalStatus.ACTIVE
+        assert doc.source.id == "src"
+
+
+# ──────────────────────────────────────────────
+#  SearchContext
+# ──────────────────────────────────────────────
+
+
+class TestSearchContext:
+    def test_defaults(self) -> None:
+        ctx = SearchContext()
+        assert ctx.region is None
+        assert ctx.topic is None
+        assert ctx.organization is None
+        assert ctx.max_results == 10
+
+    def test_with_values(self) -> None:
+        ctx = SearchContext(region="Москва", topic="налоги", organization="ФНС", max_results=25)
+        assert ctx.region == "Москва"
+        assert ctx.max_results == 25
+
+    @pytest.mark.parametrize("value", [0, -1, 51, 100])
+    def test_max_results_out_of_bounds(self, value: int) -> None:
+        with pytest.raises(ValidationError):
+            SearchContext(max_results=value)
+
+    @pytest.mark.parametrize("value", [1, 10, 50])
+    def test_max_results_boundary(self, value: int) -> None:
+        ctx = SearchContext(max_results=value)
+        assert ctx.max_results == value
+
+
+# ──────────────────────────────────────────────
+#  SearchResult
+# ──────────────────────────────────────────────
+
+
+class TestSearchResult:
+    def test_full_construction(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.95,
+            extraction_confidence=1.0,
+            data_freshness=now,
+            legal_status=LegalStatus.ACTIVE,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        result = SearchResult(
+            id="doc-1",
+            title="Test Doc",
+            snippet="Some snippet",
+            url="http://example.com/doc",
+            source_name="Test Source",
+            ingest_date=now,
+            legal_status=LegalStatus.ACTIVE,
+            confidence=cs,
+        )
+        assert result.id == "doc-1"
+        assert result.confidence.retrieval_relevance == 0.95
+        assert result.confidence.source_availability == SourceAvailability.AVAILABLE
+
+    def test_serialize_roundtrip(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.5,
+            data_freshness=now,
+            legal_status=LegalStatus.MODIFIED,
+            source_availability=SourceAvailability.DEGRADED,
+        )
+        result = SearchResult(
+            id="doc-1",
+            title="Test",
+            snippet="snip",
+            url="http://example.com",
+            source_name="Src",
+            ingest_date=now,
+            legal_status=LegalStatus.MODIFIED,
+            confidence=cs,
+        )
+        d = result.model_dump()
+        assert d["legal_status"] == "modified"
+        assert d["confidence"]["source_availability"] == "degraded"
+        assert d["confidence"]["retrieval_relevance"] == 0.5
+
+
+# ──────────────────────────────────────────────
+#  TopicNode
+# ──────────────────────────────────────────────
+
+
+class TestTopicNode:
+    def test_minimal(self) -> None:
+        node = TopicNode(id="topic-1", name="Налоги", parent_id="root")
+        assert node.id == "topic-1"
+        assert node.name == "Налоги"
+        assert node.parent_id == "root"
+        assert node.description is None
+        assert node.child_count == 0
+        assert node.document_count == 0
+
+    def test_with_all_fields(self) -> None:
+        node = TopicNode(
+            id="topic-1",
+            name="Налоги",
+            parent_id="root",
+            description="Всё о налогах",
+            child_count=5,
+            document_count=100,
+        )
+        assert node.description == "Всё о налогах"
+        assert node.child_count == 5
+        assert node.document_count == 100
+
+
+# ──────────────────────────────────────────────
+#  TocNode
+# ──────────────────────────────────────────────
+
+
+class TestTocNode:
+    def test_minimal(self) -> None:
+        node = TocNode(
+            id="sec-1",
+            document_id="doc-1",
+            title="Раздел 1",
+            parent_id="root",
+            level=0,
+        )
+        assert node.id == "sec-1"
+        assert node.level == 0
+        assert node.child_count == 0
+
+    def test_negative_level_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            TocNode(
+                id="sec-1",
+                document_id="doc-1",
+                title="Bad",
+                parent_id="root",
+                level=-1,
+            )
+
+    def test_level_boundary(self) -> None:
+        node = TocNode(
+            id="sec-1",
+            document_id="doc-1",
+            title="Root",
+            parent_id="root",
+            level=0,
+        )
+        assert node.level == 0
+
+
+# ──────────────────────────────────────────────
+#  LegalStatus & SourceAvailability enums
+# ──────────────────────────────────────────────
+
+
+class TestLegalStatus:
+    def test_all_values(self) -> None:
+        assert LegalStatus.ACTIVE.value == "active"
+        assert LegalStatus.REVOKED.value == "revoked"
+        assert LegalStatus.MODIFIED.value == "modified"
+        assert LegalStatus.UNKNOWN.value == "unknown"
+
+    def test_from_string(self) -> None:
+        assert LegalStatus("active") == LegalStatus.ACTIVE
+        assert LegalStatus("revoked") == LegalStatus.REVOKED
+
+    def test_invalid_value(self) -> None:
+        with pytest.raises(ValueError):
+            LegalStatus("invalid_status")
+
+
+class TestSourceAvailability:
+    def test_all_values(self) -> None:
+        assert SourceAvailability.AVAILABLE.value == "available"
+        assert SourceAvailability.DEGRADED.value == "degraded"
+        assert SourceAvailability.UNAVAILABLE.value == "unavailable"
+
+    def test_from_string(self) -> None:
+        assert SourceAvailability("available") == SourceAvailability.AVAILABLE
+        assert SourceAvailability("unavailable") == SourceAvailability.UNAVAILABLE

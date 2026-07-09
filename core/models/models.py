@@ -33,7 +33,7 @@ class SourceAvailability(str, Enum):
 class Source(BaseModel):
     """Information about a data source."""
 
-    id: str = Field(description="Уникальный идентификатор источника")
+    id: str = Field(min_length=1, description="Уникальный идентификатор источника")
     name: str = Field(description="Человекочитаемое название источника")
     url: str = Field(description="Базовый URL источника")
     jurisdiction: str | None = Field(
@@ -84,10 +84,10 @@ class OfficialDocument(BaseModel):
 
     model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
 
-    id: str = Field(description="Уникальный идентификатор документа")
+    id: str = Field(min_length=1, description="Уникальный идентификатор документа")
     title: str = Field(description="Заголовок документа")
     source: Source = Field(description="Источник документа")
-    url: str = Field(description="Прямая ссылка на документ")
+    url: str = Field(min_length=1, description="Прямая ссылка на документ")
     summary: str | None = Field(
         default=None, description="Краткое содержание/аннотация"
     )
@@ -140,7 +140,7 @@ class SearchContext(BaseModel):
 class SearchResult(BaseModel):
     """Результат поиска — компактное представление документа."""
 
-    id: str = Field(description="Идентификатор документа")
+    id: str = Field(min_length=1, description="Идентификатор документа")
     title: str = Field(description="Заголовок")
     snippet: str = Field(description="Cниппет c релевантным контекстом")
     url: str = Field(description="Ссылка на документ")
@@ -155,7 +155,7 @@ class SearchResult(BaseModel):
 class TopicNode(BaseModel):
     """Узел иерархического рубрикатора."""
 
-    id: str = Field(description="Уникальный идентификатор рубрики")
+    id: str = Field(min_length=1, description="Уникальный идентификатор рубрики")
     name: str = Field(description="Название рубрики")
     parent_id: str = Field(description="ID родительской рубрики")
     description: str | None = Field(
@@ -172,7 +172,7 @@ class TopicNode(BaseModel):
 class TocNode(BaseModel):
     """Узел оглавления документа."""
 
-    id: str = Field(description="Идентификатор раздела")
+    id: str = Field(min_length=1, description="Идентификатор раздела")
     document_id: str = Field(description="ID документа")
     title: str = Field(description="Заголовок раздела")
     parent_id: str = Field(description="ID родительского раздела")
