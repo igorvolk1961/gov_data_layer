@@ -48,12 +48,8 @@ class Citation(BaseModel):
     text: str = Field(description="Текст цитаты")
     source_id: str = Field(description="Идентификатор документа-источника")
     url: str = Field(description="Прямая ссылка на источник цитаты")
-    span_start: int | None = Field(
-        default=None, description="Начальная позиция цитаты в документе"
-    )
-    span_end: int | None = Field(
-        default=None, description="Конечная позиция цитаты в документе"
-    )
+    span_start: int | None = Field(default=None, description="Начальная позиция цитаты в документе")
+    span_end: int | None = Field(default=None, description="Конечная позиция цитаты в документе")
 
 
 class ConfidenceSignals(BaseModel):
@@ -70,9 +66,7 @@ class ConfidenceSignals(BaseModel):
         default=1.0,
         description="Надёжность извлечения полей (если используется LLM)",
     )
-    data_freshness: datetime = Field(
-        description="Дата последнего инжеста данных в индекс"
-    )
+    data_freshness: datetime = Field(description="Дата последнего инжеста данных в индекс")
     legal_status: LegalStatus = Field(description="Юридический статус документа")
     source_availability: SourceAvailability = Field(
         description="Доступность источника на момент запроса"
@@ -88,25 +82,19 @@ class OfficialDocument(BaseModel):
     title: str = Field(description="Заголовок документа")
     source: Source = Field(description="Источник документа")
     url: str = Field(min_length=1, description="Прямая ссылка на документ")
-    summary: str | None = Field(
-        default=None, description="Краткое содержание/аннотация"
-    )
+    summary: str | None = Field(default=None, description="Краткое содержание/аннотация")
     jurisdiction: str | None = Field(
         default=None, description="Юрисдикция (федеральная, региональная, ведомственная)"
     )
     topic: str | None = Field(default=None, description="Тематическая рубрика")
-    organization: str | None = Field(
-        default=None, description="Орган, принявший документ"
-    )
+    organization: str | None = Field(default=None, description="Орган, принявший документ")
 
     # Две оси времени
     ingest_date: datetime = Field(
         default_factory=_utc_now,
         description="Дата загрузки документа в индекс (свежесть копии)",
     )
-    valid_from: datetime | None = Field(
-        default=None, description="Дата начала юридической силы"
-    )
+    valid_from: datetime | None = Field(default=None, description="Дата начала юридической силы")
     valid_to: datetime | None = Field(
         default=None,
         description="Дата окончания юридической силы (null = бессрочно)",
@@ -120,15 +108,9 @@ class OfficialDocument(BaseModel):
 class SearchContext(BaseModel):
     """Контекст запроса — опциональные параметры для роутинга и фильтрации."""
 
-    region: str | None = Field(
-        default=None, description="Регион для фильтрации"
-    )
-    topic: str | None = Field(
-        default=None, description="Тематическая рубрика"
-    )
-    organization: str | None = Field(
-        default=None, description="Организация/ведомство"
-    )
+    region: str | None = Field(default=None, description="Регион для фильтрации")
+    topic: str | None = Field(default=None, description="Тематическая рубрика")
+    organization: str | None = Field(default=None, description="Организация/ведомство")
     max_results: int = Field(
         default=10,
         ge=1,
@@ -147,9 +129,7 @@ class SearchResult(BaseModel):
     source_name: str = Field(description="Название источника")
     ingest_date: datetime = Field(description="Дата инжеста")
     legal_status: LegalStatus = Field(description="Юридический статус")
-    confidence: ConfidenceSignals = Field(
-        description="Сигналы уверенности для данного результата"
-    )
+    confidence: ConfidenceSignals = Field(description="Сигналы уверенности для данного результата")
 
 
 class TopicNode(BaseModel):
@@ -158,15 +138,9 @@ class TopicNode(BaseModel):
     id: str = Field(min_length=1, description="Уникальный идентификатор рубрики")
     name: str = Field(description="Название рубрики")
     parent_id: str = Field(description="ID родительской рубрики")
-    description: str | None = Field(
-        default=None, description="Описание рубрики"
-    )
-    child_count: int = Field(
-        default=0, description="Количество дочерних рубрик"
-    )
-    document_count: int = Field(
-        default=0, description="Количество документов в рубрике"
-    )
+    description: str | None = Field(default=None, description="Описание рубрики")
+    child_count: int = Field(default=0, description="Количество дочерних рубрик")
+    document_count: int = Field(default=0, description="Количество документов в рубрике")
 
 
 class TocNode(BaseModel):
@@ -177,6 +151,4 @@ class TocNode(BaseModel):
     title: str = Field(description="Заголовок раздела")
     parent_id: str = Field(description="ID родительского раздела")
     level: int = Field(ge=0, description="Уровень вложенности (0 = корень)")
-    child_count: int = Field(
-        default=0, description="Количество дочерних разделов"
-    )
+    child_count: int = Field(default=0, description="Количество дочерних разделов")

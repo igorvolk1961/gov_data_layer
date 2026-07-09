@@ -28,7 +28,6 @@ from core.models.models import (
     TopicNode,
 )
 
-
 # ──────────────────────────────────────────────
 #  Source
 # ──────────────────────────────────────────────
@@ -50,6 +49,7 @@ class TestSource:
             jurisdiction="федеральная",
         )
         assert s.jurisdiction == "федеральная"
+
 
 class TestEmptyIdRejection:
     """All models with min_length=1 on their id field should reject empty strings."""
@@ -177,7 +177,9 @@ class TestConfidenceSignals:
 class TestOfficialDocument:
     def test_minimal(self) -> None:
         source = Source(id="src", name="Src", url="http://example.com")
-        doc = OfficialDocument(id="doc-1", title="Test", source=source, url="http://example.com/doc")
+        doc = OfficialDocument(
+            id="doc-1", title="Test", source=source, url="http://example.com/doc"
+        )
         assert doc.id == "doc-1"
         assert doc.title == "Test"
         assert doc.source == source
@@ -231,7 +233,9 @@ class TestOfficialDocument:
 
     def test_serialize_to_dict(self) -> None:
         source = Source(id="src", name="Src", url="http://example.com")
-        doc = OfficialDocument(id="doc-1", title="Test", source=source, url="http://example.com/doc")
+        doc = OfficialDocument(
+            id="doc-1", title="Test", source=source, url="http://example.com/doc"
+        )
         d = doc.model_dump()
         assert d["id"] == "doc-1"
         assert d["title"] == "Test"
@@ -240,7 +244,9 @@ class TestOfficialDocument:
 
     def test_serialize_to_json(self) -> None:
         source = Source(id="src", name="Src", url="http://example.com")
-        doc = OfficialDocument(id="doc-1", title="Test", source=source, url="http://example.com/doc")
+        doc = OfficialDocument(
+            id="doc-1", title="Test", source=source, url="http://example.com/doc"
+        )
         json_str = doc.model_dump_json()
         # Pydantic v2 serializes without extra spaces
         assert '"id":"doc-1"' in json_str

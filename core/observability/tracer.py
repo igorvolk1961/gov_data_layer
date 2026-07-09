@@ -34,6 +34,7 @@ logger = get_logger(__name__)
 @dataclass
 class SpanData:
     """Data for a single span/trace for serialization."""
+
     name: str
     trace_id: str
     span_id: str
@@ -444,9 +445,7 @@ def get_tracer() -> Tracer:
         RuntimeError: if Tracer was not initialized.
     """
     if _tracer_instance is None:
-        raise RuntimeError(
-            "Tracer not initialized. Call configure() first."
-        )
+        raise RuntimeError("Tracer not initialized. Call configure() first.")
     return _tracer_instance
 
 

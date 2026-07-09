@@ -13,8 +13,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from datetime import datetime, timezone
-from typing import Any, Generator
+from collections.abc import Generator
 
 import pytest
 
@@ -28,7 +27,6 @@ from core.observability.tracer import (
     get_tracer,
     set_tracer,
 )
-
 
 # ──────────────────────────────────────────────
 #  SpanData
@@ -99,18 +97,16 @@ class TestSpan:
 
     def test_exception_in_context_sets_error(self) -> None:
         span = _Span("test", "trace-1", "span-1", None)
-        with pytest.raises(RuntimeError):
-            with span:
-                raise RuntimeError("something went wrong")
+        with pytest.raises(RuntimeError), span:
+            raise RuntimeError("something went wrong")
         assert span._data.error is not None
         assert "RuntimeError" in span._data.error
         assert span._data.level == "ERROR"
 
     def test_exception_in_context_sets_end_time(self) -> None:
         span = _Span("test", "trace-1", "span-1", None)
-        with pytest.raises(ValueError):
-            with span:
-                raise ValueError("fail")
+        with pytest.raises(ValueError), span:
+            raise ValueError("fail")
         assert span._data.end_time is not None
 
     def test_set_error_with_base_exception(self) -> None:
@@ -123,9 +119,8 @@ class TestSpan:
     def test_keyboard_interrupt_recorded_as_error(self) -> None:
         """Non-Exception BaseExceptions should be recorded as errors."""
         span = _Span("test", "trace-1", "span-1", None)
-        with pytest.raises(KeyboardInterrupt):
-            with span:
-                raise KeyboardInterrupt()
+        with pytest.raises(KeyboardInterrupt), span:
+            raise KeyboardInterrupt()
         assert span._data.error is not None
         assert span._data.level == "ERROR"
 
@@ -200,7 +195,9 @@ class TestFileFallbackTracer:
         span = file_tracer.span("orphan")
         assert span._data.parent_span_id is None
 
-    def test_writes_to_file_on_exit(self, file_tracer: FileFallbackTracer, temp_log_file: str) -> None:
+    def test_writes_to_file_on_exit(
+        self, file_tracer: FileFallbackTracer, temp_log_file: str
+    ) -> None:
         with file_tracer.trace("write-test") as span:
             span.set_input({"key": "value"})
             span.set_output({"result": "done"})
@@ -215,7 +212,9 @@ class TestFileFallbackTracer:
         assert record["output"] == {"result": "done"}
         assert record["end_time"] is not None
 
-    def test_writes_multiple_spans(self, file_tracer: FileFallbackTracer, temp_log_file: str) -> None:
+    def test_writes_multiple_spans(
+        self, file_tracer: FileFallbackTracer, temp_log_file: str
+    ) -> None:
         with file_tracer.trace("first"):
             pass
         with file_tracer.trace("second"):
