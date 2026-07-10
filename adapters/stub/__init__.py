@@ -114,9 +114,7 @@ class StubAdapter(SourceAdapter):
                     legal_status=doc.legal_status,
                     confidence=ConfidenceSignals(
                         retrieval_relevance=0.95,
-                        extraction_confidence=1.0,
                         data_freshness=now,
-                        legal_status=doc.legal_status,
                         source_availability=SourceAvailability.AVAILABLE,
                     ),
                 )

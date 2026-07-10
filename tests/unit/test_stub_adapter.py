@@ -103,14 +103,7 @@ class TestSearch:
         for r in results:
             assert isinstance(r.confidence, ConfidenceSignals)
             assert r.confidence.retrieval_relevance == 0.95
-            assert r.confidence.extraction_confidence == 1.0
             assert r.confidence.source_availability == SourceAvailability.AVAILABLE
-            assert r.confidence.legal_status in (
-                LegalStatus.ACTIVE,
-                LegalStatus.REVOKED,
-                LegalStatus.MODIFIED,
-                LegalStatus.UNKNOWN,
-            )
 
     @pytest.mark.asyncio
     async def test_search_result_fields(self, adapter: StubAdapter) -> None:

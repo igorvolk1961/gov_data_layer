@@ -69,7 +69,6 @@ class TestEmptyIdRejection:
         cs = ConfidenceSignals(
             retrieval_relevance=0.5,
             data_freshness=now,
-            legal_status=LegalStatus.UNKNOWN,
             source_availability=SourceAvailability.AVAILABLE,
         )
         with pytest.raises(ValidationError):
@@ -128,13 +127,10 @@ class TestConfidenceSignals:
         cs = ConfidenceSignals(
             retrieval_relevance=0.85,
             data_freshness=now,
-            legal_status=LegalStatus.ACTIVE,
             source_availability=SourceAvailability.AVAILABLE,
         )
         assert cs.retrieval_relevance == 0.85
-        assert cs.extraction_confidence == 1.0  # default
         assert cs.data_freshness == now
-        assert cs.legal_status == LegalStatus.ACTIVE
         assert cs.source_availability == SourceAvailability.AVAILABLE
 
     @pytest.mark.parametrize("value", [-0.01, 1.01, 1.5, -1.0])
@@ -144,7 +140,6 @@ class TestConfidenceSignals:
             ConfidenceSignals(
                 retrieval_relevance=value,
                 data_freshness=now,
-                legal_status=LegalStatus.ACTIVE,
                 source_availability=SourceAvailability.AVAILABLE,
             )
 
@@ -154,20 +149,9 @@ class TestConfidenceSignals:
         cs = ConfidenceSignals(
             retrieval_relevance=value,
             data_freshness=now,
-            legal_status=LegalStatus.ACTIVE,
             source_availability=SourceAvailability.AVAILABLE,
         )
         assert cs.retrieval_relevance == value
-
-    def test_extraction_confidence_default(self) -> None:
-        now = datetime.now(timezone.utc)
-        cs = ConfidenceSignals(
-            retrieval_relevance=0.5,
-            data_freshness=now,
-            legal_status=LegalStatus.ACTIVE,
-            source_availability=SourceAvailability.AVAILABLE,
-        )
-        assert cs.extraction_confidence == 1.0
 
 
 # ──────────────────────────────────────────────
@@ -340,9 +324,7 @@ class TestSearchResult:
         now = datetime.now(timezone.utc)
         cs = ConfidenceSignals(
             retrieval_relevance=0.95,
-            extraction_confidence=1.0,
             data_freshness=now,
-            legal_status=LegalStatus.ACTIVE,
             source_availability=SourceAvailability.AVAILABLE,
         )
         result = SearchResult(
@@ -364,7 +346,6 @@ class TestSearchResult:
         cs = ConfidenceSignals(
             retrieval_relevance=0.5,
             data_freshness=now,
-            legal_status=LegalStatus.MODIFIED,
             source_availability=SourceAvailability.DEGRADED,
         )
         result = SearchResult(
@@ -394,7 +375,6 @@ class TestSearchResponse:
         cs = ConfidenceSignals(
             retrieval_relevance=0.5,
             data_freshness=now,
-            legal_status=LegalStatus.ACTIVE,
             source_availability=SourceAvailability.AVAILABLE,
         )
         result = SearchResult(
@@ -423,7 +403,6 @@ class TestSearchResponse:
         cs = ConfidenceSignals(
             retrieval_relevance=0.5,
             data_freshness=now,
-            legal_status=LegalStatus.ACTIVE,
             source_availability=SourceAvailability.AVAILABLE,
         )
         results = [
@@ -451,7 +430,6 @@ class TestSearchResponse:
         cs = ConfidenceSignals(
             retrieval_relevance=0.5,
             data_freshness=now,
-            legal_status=LegalStatus.ACTIVE,
             source_availability=SourceAvailability.AVAILABLE,
         )
         result = SearchResult(

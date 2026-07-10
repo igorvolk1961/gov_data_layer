@@ -60,23 +60,40 @@ class Citation(BaseModel):
 
 
 class ConfidenceSignals(BaseModel):
-    """Confidence signals for a piece of data."""
+    """Разложенные сигналы уверенности для результата поиска.
+
+    Свёртку в единую меру (answerability) делает вызывающий агент
+    (принцип механизм/политика).
+
+    Сигналы:
+    - retrieval_relevance: насколько результат релевантен запросу
+    - data_freshness: когда данные загружены в индекс (свежесть копии)
+    - source_availability: доступность источника на момент запроса
+
+    legal_status не включён — это метаданные документа, а не сигнал
+    уверенности; он доступен в SearchResult.legal_status и
+    OfficialDocument.legal_status.
+
+    extraction_confidence не включён — в текущей реализации все адаптеры
+    используют детерминированный парсинг (без LLM), поэтому сигнал всегда
+    равен 1.0 и не несёт информации. При появлении LLM-извлечения полей
+    сигнал может быть добавлен как dict[str, float] — уверенность по
+    каждому полю отдельно (см. ADR раздел 7).
+    """
 
     retrieval_relevance: float = Field(
         ge=0.0,
         le=1.0,
-        description="Similarity score ретрива (косинусная близость)",
+        description="Similarity score ретрива (косинусная близость). "
+        "Единственный обязательный сигнал — всегда доступен после поиска.",
     )
-    extraction_confidence: float = Field(
-        ge=0.0,
-        le=1.0,
-        default=1.0,
-        description="Надёжность извлечения полей (если используется LLM)",
+    data_freshness: datetime = Field(
+        description="Дата последнего инжеста данных в индекс. "
+        "Чем свежее, тем выше уверенность в актуальности копии.",
     )
-    data_freshness: datetime = Field(description="Дата последнего инжеста данных в индекс")
-    legal_status: LegalStatus = Field(description="Юридический статус документа")
     source_availability: SourceAvailability = Field(
-        description="Доступность источника на момент запроса"
+        description="Доступность источника на момент запроса. "
+        "Может различаться между результатами при агрегации из нескольких источников.",
     )
 
 
