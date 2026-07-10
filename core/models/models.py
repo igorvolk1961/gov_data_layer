@@ -43,11 +43,18 @@ class Source(BaseModel):
 
 
 class Citation(BaseModel):
-    """Citation linked to a source."""
+    """Citation linked to a source, with optional section path for large documents."""
 
     text: str = Field(description="Текст цитаты")
     source_id: str = Field(description="Идентификатор документа-источника")
     url: str = Field(description="Прямая ссылка на источник цитаты")
+    section: list[str] | None = Field(
+        default=None,
+        description="Путь к разделу от корня документа. "
+        "Пример: ['Раздел I', 'Глава 2', 'Статья 10']. "
+        "Позволяет агенту понять контекст цитаты и навигироваться "
+        "по иерархии документа без дополнительного запроса",
+    )
     span_start: int | None = Field(default=None, description="Начальная позиция цитаты в документе")
     span_end: int | None = Field(default=None, description="Конечная позиция цитаты в документе")
 
