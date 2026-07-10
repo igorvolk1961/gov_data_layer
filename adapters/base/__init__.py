@@ -81,6 +81,7 @@ class SourceAdapter(Protocol):
         """
         ...
 
+
 __all__ = [
     "SourceAdapter",
 ]

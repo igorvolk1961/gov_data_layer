@@ -46,8 +46,7 @@ class ObservabilityConfig:
             langfuse_public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
             langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
-            log_clear_on_start=os.getenv("LOG_CLEAR_ON_START", "false").lower()
-            == "true",
+            log_clear_on_start=os.getenv("LOG_CLEAR_ON_START", "false").lower() == "true",
             log_file=os.getenv("LOG_FILE", "data/traces.log"),
         )
 

@@ -87,13 +87,21 @@ class StubAdapter(SourceAdapter):
         if context is not None and (context.region or context.topic or context.organization):
             logger.warning(
                 "StubAdapter does not support context filters — returning empty results",
-                extra={"region": context.region, "topic": context.topic, "organization": context.organization},
+                extra={
+                    "region": context.region,
+                    "topic": context.topic,
+                    "organization": context.organization,
+                },
             )
             return []
         results: list[SearchResult] = []
         now = datetime.now(timezone.utc)
         for doc in self._documents.values():
-            if query and query.lower() not in doc.title.lower() and query.lower() not in (doc.summary or "").lower():
+            if (
+                query
+                and query.lower() not in doc.title.lower()
+                and query.lower() not in (doc.summary or "").lower()
+            ):
                 continue
             results.append(
                 SearchResult(

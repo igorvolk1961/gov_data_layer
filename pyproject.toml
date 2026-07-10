@@ -98,3 +98,8 @@ markers = [
     "contract: Contract tests",
     "slow: Slow tests (e.g. integration with external services)",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]

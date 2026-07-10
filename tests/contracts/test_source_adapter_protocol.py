@@ -10,7 +10,7 @@ Tests cover:
 from __future__ import annotations
 
 import inspect
-from typing import Protocol, get_type_hints
+from typing import Protocol
 
 import pytest
 
@@ -32,9 +32,13 @@ def _assert_conforms_to_protocol(cls: type, protocol: type) -> None:
             continue
         impl_method = getattr(cls, name, None)
         if impl_method is None:
-            pytest.fail(f"{cls.__name__} is missing method '{name}' required by {protocol.__name__}")
+            pytest.fail(
+                f"{cls.__name__} is missing method '{name}' required by {protocol.__name__}"
+            )
         # Verify async consistency
-        if inspect.iscoroutinefunction(proto_method) and not inspect.iscoroutinefunction(impl_method):
+        if inspect.iscoroutinefunction(proto_method) and not inspect.iscoroutinefunction(
+            impl_method
+        ):
             pytest.fail(
                 f"'{name}' in {cls.__name__} must be async "
                 f"(defined as async in {protocol.__name__})"
@@ -43,10 +47,9 @@ def _assert_conforms_to_protocol(cls: type, protocol: type) -> None:
         impl_sig = inspect.signature(impl_method)
         proto_params = list(proto_sig.parameters.keys())[1:]  # skip 'self'
         impl_params = list(impl_sig.parameters.keys())[1:]
-        assert proto_params == impl_params, (
-            f"Signature mismatch for '{name}': "
-            f"protocol expects {proto_params}, got {impl_params}"
-        )
+        assert (
+            proto_params == impl_params
+        ), f"Signature mismatch for '{name}': protocol expects {proto_params}, got {impl_params}"
 
 
 class TestProtocolContract:
@@ -121,13 +124,13 @@ class TestNonConformingClasses:
             def source_id(self) -> str:
                 return "test"
 
-            async def search(self, query: str, context=None) -> list:
+            async def search(self, query: str, context=None) -> list:  # noqa: ARG002
                 return []
 
-            async def get(self, document_id: str) -> dict:
+            async def get(self, document_id: str) -> dict:  # noqa: ARG002
                 return {}
 
-            async def normalize(self, raw: dict) -> dict:
+            async def normalize(self, raw: dict) -> dict:  # noqa: ARG002
                 return {}
 
             # missing ingest()
@@ -136,13 +139,13 @@ class TestNonConformingClasses:
 
     def test_missing_source_id_fails_isinstance(self) -> None:
         class MissingSourceId:
-            async def search(self, query: str, context=None) -> list:
+            async def search(self, query: str, context=None) -> list:  # noqa: ARG002
                 return []
 
-            async def get(self, document_id: str) -> dict:
+            async def get(self, document_id: str) -> dict:  # noqa: ARG002
                 return {}
 
-            async def normalize(self, raw: dict) -> dict:
+            async def normalize(self, raw: dict) -> dict:  # noqa: ARG002
                 return {}
 
             async def ingest(self) -> int:
@@ -156,18 +159,19 @@ class TestNonConformingClasses:
         A class with wrong parameter names still passes isinstance check.
         This is a known limitation of Protocols.
         """
+
         class WrongSignature:
             @property
             def source_id(self) -> str:
                 return "test"
 
-            async def search(self, q: str, context=None) -> list:  # type: ignore[override]
+            async def search(self, q: str, context=None) -> list:  # type: ignore[override]  # noqa: ARG002
                 return []
 
-            async def get(self, document_id: str) -> dict:
+            async def get(self, document_id: str) -> dict:  # noqa: ARG002
                 return {}
 
-            async def normalize(self, raw: dict) -> dict:
+            async def normalize(self, raw: dict) -> dict:  # noqa: ARG002
                 return {}
 
             async def ingest(self) -> int:
@@ -182,18 +186,19 @@ class TestNonConformingClasses:
         A class with sync methods still passes isinstance check.
         This is a known limitation of Protocols.
         """
+
         class SyncMethod:
             @property
             def source_id(self) -> str:
                 return "test"
 
-            def search(self, query: str, context=None) -> list:  # type: ignore[override]
+            def search(self, query: str, context=None) -> list:  # type: ignore[override]  # noqa: ARG002
                 return []
 
-            async def get(self, document_id: str) -> dict:
+            async def get(self, document_id: str) -> dict:  # noqa: ARG002
                 return {}
 
-            async def normalize(self, raw: dict) -> dict:
+            async def normalize(self, raw: dict) -> dict:  # noqa: ARG002
                 return {}
 
             async def ingest(self) -> int:
