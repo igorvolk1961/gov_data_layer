@@ -37,8 +37,9 @@ class StubAdapter(SourceAdapter):
                 url="https://example.gov.ru/doc-1",
                 summary="Тестовый документ для демонстрации шва адаптера.",
                 jurisdiction="федеральная",
-                topic="общие положения",
-                organization="Минюст",
+                region=None,
+                topic=["общие положения"],
+                organization=["Минюст"],
                 ingest_date=datetime.now(timezone.utc),
                 valid_from=datetime(2025, 1, 1, tzinfo=timezone.utc),
                 valid_to=None,
@@ -55,8 +56,9 @@ class StubAdapter(SourceAdapter):
                 url="https://example.gov.ru/doc-2",
                 summary="Ещё один тестовый документ.",
                 jurisdiction="региональная",
-                topic="налоги",
-                organization="ФНС",
+                region="Московская область",
+                topic=["налоги"],
+                organization=["ФНС"],
                 ingest_date=datetime.now(timezone.utc),
                 valid_from=datetime(2024, 6, 1, tzinfo=timezone.utc),
                 valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
@@ -110,6 +112,10 @@ class StubAdapter(SourceAdapter):
                     snippet=(doc.summary or "")[:200],
                     url=doc.url,
                     source_name=doc.source.name,
+                    jurisdiction=doc.jurisdiction,
+                    region=doc.region,
+                    topic=doc.topic,
+                    organization=doc.organization,
                     ingest_date=doc.ingest_date,
                     legal_status=doc.legal_status,
                     confidence=ConfidenceSignals(
@@ -128,7 +134,6 @@ class StubAdapter(SourceAdapter):
         return doc
 
     async def normalize(self, raw: dict[str, object]) -> OfficialDocument:
-        # TODO: Map all OfficialDocument fields from raw source data
         doc_id = raw.get("id")
         if doc_id is None:
             raise InvalidInputError("Missing required field 'id' in raw data")
@@ -144,6 +149,15 @@ class StubAdapter(SourceAdapter):
                 url="https://example.gov.ru",
             ),
             url=str(url),
+            summary=raw.get("summary"),
+            jurisdiction=raw.get("jurisdiction"),
+            region=raw.get("region"),
+            topic=raw.get("topic", []),
+            organization=raw.get("organization", []),
+            ingest_date=raw.get("ingest_date", datetime.now(timezone.utc)),
+            valid_from=raw.get("valid_from"),
+            valid_to=raw.get("valid_to"),
+            legal_status=raw.get("legal_status", LegalStatus.UNKNOWN),
         )
 
     async def ingest(self) -> int:

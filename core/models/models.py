@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 def _utc_now() -> datetime:
@@ -100,7 +100,13 @@ class ConfidenceSignals(BaseModel):
 class OfficialDocument(BaseModel):
     """Canonical document model — entity with metadata."""
 
-    model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
+    # Pydantic v2 uses ISO format by default for datetime serialization,
+    # which matches the previous json_encoders override. Explicit serializer
+    # ensures consistent behavior for model_dump_json() and json.dumps().
+    @field_serializer("ingest_date", "valid_from", "valid_to")
+    @classmethod
+    def serialize_datetime(cls, v: datetime | None) -> str | None:
+        return v.isoformat() if v else None
 
     id: str = Field(min_length=1, description="Уникальный идентификатор документа")
     title: str = Field(description="Заголовок документа")
@@ -110,8 +116,22 @@ class OfficialDocument(BaseModel):
     jurisdiction: str | None = Field(
         default=None, description="Юрисдикция (федеральная, региональная, ведомственная)"
     )
-    topic: str | None = Field(default=None, description="Тематическая рубрика")
-    organization: str | None = Field(default=None, description="Орган, принявший документ")
+    region: str | None = Field(
+        default=None,
+        description="Географический регион, к которому относится документ. "
+        "Пример: 'Московская область', 'г. Москва'. "
+        "Для федеральных документов — null.",
+    )
+    topic: list[str] = Field(
+        default_factory=list,
+        description="Тематические рубрики. Документ может относиться к нескольким рубрикам. "
+        "Пример: ['налоги', 'земельное право']",
+    )
+    organization: list[str] = Field(
+        default_factory=list,
+        description="Органы, принявшие документ. Документ может быть принят несколькими органами. "
+        "Пример: ['Минюст России', 'ФНС России']",
+    )
 
     # Две оси времени
     ingest_date: datetime = Field(
@@ -144,13 +164,21 @@ class SearchContext(BaseModel):
         default=None,
         description="Географический регион (город, область, край). Пример: 'Московская область', 'г. Москва'",
     )
-    topic: str | None = Field(
+    # Примечание: None vs [] — в SearchContext None означает "фильтр не указан"
+    # (пропустить фильтрацию), в то время как в OfficialDocument, SearchResult
+    # и DocumentDetail пустой список [] означает "нет данных". Это различие
+    # отражает разную семантику: контекст запроса (фильтр) vs данные документа.
+    topic: list[str] | None = Field(
         default=None,
-        description="Тематическая рубрика. Пример: 'налоги', 'социальное обеспечение', 'земельное право'",
+        description="Тематические рубрики для фильтрации (OR-семантика — совпадение с любой). "
+        "Пример: ['налоги', 'земельное право']. "
+        "None = фильтр не применяется.",
     )
-    organization: str | None = Field(
+    organization: list[str] | None = Field(
         default=None,
-        description="Орган, принявший документ. Пример: 'ФНС', 'Законодательное собрание Московской области'",
+        description="Органы для фильтрации (OR-семантика — совпадение с любым). "
+        "Пример: ['ФНС', 'Минюст России']. "
+        "None = фильтр не применяется.",
     )
     official_only: bool = Field(
         default=False,
@@ -177,13 +205,37 @@ class SearchContext(BaseModel):
 
 
 class SearchResult(BaseModel):
-    """Результат поиска — компактное представление документа."""
+    """Результат поиска — компактное представление документа.
+
+    Содержит все метаданные, необходимые агенту для фильтрации и ранжирования
+    без дополнительного вызова get_source() (N+1 prevention).
+    """
 
     id: str = Field(min_length=1, description="Идентификатор документа")
     title: str = Field(description="Заголовок")
     snippet: str = Field(description="Cниппет c релевантным контекстом")
     url: str = Field(description="Ссылка на документ")
     source_name: str = Field(description="Название источника")
+    jurisdiction: str | None = Field(
+        default=None,
+        description="Юрисдикция (федеральная, региональная, ведомственная). "
+        "Позволяет агенту фильтровать результаты без N+1 get_source().",
+    )
+    region: str | None = Field(
+        default=None,
+        description="Географический регион документа. "
+        "Позволяет агенту фильтровать результаты без N+1 get_source().",
+    )
+    topic: list[str] = Field(
+        default_factory=list,
+        description="Тематические рубрики. "
+        "Позволяет агенту фильтровать результаты без N+1 get_source().",
+    )
+    organization: list[str] = Field(
+        default_factory=list,
+        description="Органы, принявшие документ. "
+        "Позволяет агенту фильтровать результаты без N+1 get_source().",
+    )
     ingest_date: datetime = Field(description="Дата инжеста")
     legal_status: LegalStatus = Field(description="Юридический статус")
     confidence: ConfidenceSignals = Field(description="Сигналы уверенности для данного результата")
@@ -207,6 +259,67 @@ class SearchResponse(BaseModel):
         ge=0,
         description="Смещение, использованное в запросе (зеркалится из SearchContext.offset "
         "для удобства агента)",
+    )
+
+
+class DocumentDetail(BaseModel):
+    """Полная карточка документа — ответ get_source().
+
+    Агент вызывает get_source() после выбора документа из результатов поиска.
+    Содержит плоские метаданные (без вложенного OfficialDocument), полный текст,
+    цитаты с привязкой к разделам и оглавление.
+
+    Агент НЕ видит OfficialDocument — это внутренняя модель слоя.
+    """
+
+    # Плоские метаданные (агент не видит OfficialDocument)
+    id: str = Field(min_length=1, description="Идентификатор документа")
+    title: str = Field(description="Заголовок документа")
+    url: str = Field(description="Прямая ссылка на документ")
+    source_name: str = Field(description="Название источника")
+    jurisdiction: str | None = Field(
+        default=None, description="Юрисдикция (федеральная, региональная, ведомственная)"
+    )
+    region: str | None = Field(
+        default=None,
+        description="Географический регион, к которому относится документ. "
+        "Пример: 'Московская область', 'г. Москва'. "
+        "Для федеральных документов — null.",
+    )
+    topic: list[str] = Field(
+        default_factory=list,
+        description="Тематические рубрики. Документ может относиться к нескольким рубрикам.",
+    )
+    organization: list[str] = Field(
+        default_factory=list,
+        description="Органы, принявшие документ. Документ может быть принят несколькими органами.",
+    )
+    ingest_date: datetime = Field(description="Дата загрузки документа в индекс (свежесть копии)")
+    valid_from: datetime | None = Field(default=None, description="Дата начала юридической силы")
+    valid_to: datetime | None = Field(
+        default=None,
+        description="Дата окончания юридической силы (null = бессрочно)",
+    )
+    legal_status: LegalStatus = Field(description="Юридический статус")
+
+    # Содержимое (то, ради чего агент вызывает get_source)
+    content: str = Field(
+        description="Полный текст документа в markdown-подобном формате. "
+        "До ~4000 токенов (см. SPEC.md раздел 4). "
+        "Для очень больших документов может быть обрезан — агент использует "
+        "get_toc() для навигации по разделам.",
+    )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="Цитаты с привязкой к разделам документа. "
+        "Каждая цитата содержит текст, ссылку на источник и путь к разделу. "
+        "Агент использует их для точного provenance в ответе пользователю.",
+    )
+    toc: list[TocNode] = Field(
+        default_factory=list,
+        description="Оглавление документа. "
+        "Позволяет агенту навигироваться по структуре документа "
+        "без дополнительного вызова get_toc().",
     )
 
 

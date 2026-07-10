@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from core.models.models import (
     Citation,
     ConfidenceSignals,
+    DocumentDetail,
     LegalStatus,
     OfficialDocument,
     SearchContext,
@@ -170,8 +171,9 @@ class TestOfficialDocument:
         assert doc.source == source
         assert doc.summary is None
         assert doc.jurisdiction is None
-        assert doc.topic is None
-        assert doc.organization is None
+        assert doc.region is None
+        assert doc.topic == []
+        assert doc.organization == []
         assert doc.legal_status == LegalStatus.UNKNOWN
         assert doc.valid_from is None
         assert doc.valid_to is None
@@ -189,8 +191,9 @@ class TestOfficialDocument:
             url="http://example.com/doc",
             summary="A summary",
             jurisdiction="федеральная",
-            topic="налоги",
-            organization="ФНС",
+            region="Московская область",
+            topic=["налоги", "земельное право"],
+            organization=["ФНС", "Минюст"],
             ingest_date=now,
             valid_from=datetime(2025, 1, 1, tzinfo=timezone.utc),
             valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
@@ -198,8 +201,9 @@ class TestOfficialDocument:
         )
         assert doc.summary == "A summary"
         assert doc.jurisdiction == "федеральная"
-        assert doc.topic == "налоги"
-        assert doc.organization == "ФНС"
+        assert doc.region == "Московская область"
+        assert doc.topic == ["налоги", "земельное право"]
+        assert doc.organization == ["ФНС", "Минюст"]
         assert doc.ingest_date == now
         assert doc.valid_from == datetime(2025, 1, 1, tzinfo=timezone.utc)
         assert doc.valid_to == datetime(2026, 12, 31, tzinfo=timezone.utc)
@@ -274,14 +278,16 @@ class TestSearchContext:
     def test_with_values(self) -> None:
         ctx = SearchContext(
             region="Москва",
-            topic="налоги",
-            organization="ФНС",
+            topic=["налоги", "земельное право"],
+            organization=["ФНС", "Минюст"],
             official_only=True,
             max_age_days=30,
             max_results=25,
             offset=50,
         )
         assert ctx.region == "Москва"
+        assert ctx.topic == ["налоги", "земельное право"]
+        assert ctx.organization == ["ФНС", "Минюст"]
         assert ctx.official_only is True
         assert ctx.max_age_days == 30
         assert ctx.max_results == 25
@@ -333,13 +339,43 @@ class TestSearchResult:
             snippet="Some snippet",
             url="http://example.com/doc",
             source_name="Test Source",
+            jurisdiction="федеральная",
+            region="Московская область",
+            topic=["налоги", "земельное право"],
+            organization=["ФНС", "Минюст"],
             ingest_date=now,
             legal_status=LegalStatus.ACTIVE,
             confidence=cs,
         )
         assert result.id == "doc-1"
+        assert result.jurisdiction == "федеральная"
+        assert result.region == "Московская область"
+        assert result.topic == ["налоги", "земельное право"]
+        assert result.organization == ["ФНС", "Минюст"]
         assert result.confidence.retrieval_relevance == 0.95
         assert result.confidence.source_availability == SourceAvailability.AVAILABLE
+
+    def test_defaults(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.5,
+            data_freshness=now,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        result = SearchResult(
+            id="doc-1",
+            title="Test",
+            snippet="snip",
+            url="http://example.com",
+            source_name="Src",
+            ingest_date=now,
+            legal_status=LegalStatus.UNKNOWN,
+            confidence=cs,
+        )
+        assert result.jurisdiction is None
+        assert result.region is None
+        assert result.topic == []
+        assert result.organization == []
 
     def test_serialize_roundtrip(self) -> None:
         now = datetime.now(timezone.utc)
@@ -354,12 +390,20 @@ class TestSearchResult:
             snippet="snip",
             url="http://example.com",
             source_name="Src",
+            jurisdiction="федеральная",
+            region="Московская область",
+            topic=["налоги"],
+            organization=["ФНС"],
             ingest_date=now,
             legal_status=LegalStatus.MODIFIED,
             confidence=cs,
         )
         d = result.model_dump()
         assert d["legal_status"] == "modified"
+        assert d["jurisdiction"] == "федеральная"
+        assert d["region"] == "Московская область"
+        assert d["topic"] == ["налоги"]
+        assert d["organization"] == ["ФНС"]
         assert d["confidence"]["source_availability"] == "degraded"
         assert d["confidence"]["retrieval_relevance"] == 0.5
 
@@ -448,6 +492,120 @@ class TestSearchResponse:
         assert d["offset"] == 0
         assert len(d["results"]) == 1
         assert d["results"][0]["id"] == "doc-1"
+
+
+# ──────────────────────────────────────────────
+#  DocumentDetail
+# ──────────────────────────────────────────────
+
+
+class TestDocumentDetail:
+    def test_minimal(self) -> None:
+        now = datetime.now(timezone.utc)
+        detail = DocumentDetail(
+            id="doc-1",
+            title="Test Doc",
+            url="http://example.com/doc",
+            source_name="Test Source",
+            ingest_date=now,
+            legal_status=LegalStatus.ACTIVE,
+            content="Full text content",
+        )
+        assert detail.id == "doc-1"
+        assert detail.title == "Test Doc"
+        assert detail.url == "http://example.com/doc"
+        assert detail.source_name == "Test Source"
+        assert detail.jurisdiction is None
+        assert detail.region is None
+        assert detail.topic == []
+        assert detail.organization == []
+        assert detail.ingest_date == now
+        assert detail.valid_from is None
+        assert detail.valid_to is None
+        assert detail.legal_status == LegalStatus.ACTIVE
+        assert detail.content == "Full text content"
+        assert detail.citations == []
+        assert detail.toc == []
+
+    def test_with_all_fields(self) -> None:
+        now = datetime.now(timezone.utc)
+        citation = Citation(
+            text="Цитата текста",
+            source_id="doc-1",
+            url="http://example.com/doc#section-1",
+            section=["Раздел I", "Глава 2", "Статья 10"],
+            span_start=100,
+            span_end=200,
+        )
+        toc_node = TocNode(
+            id="sec-1",
+            document_id="doc-1",
+            title="Раздел 1",
+            parent_id="root",
+            level=0,
+            child_count=2,
+        )
+        detail = DocumentDetail(
+            id="doc-1",
+            title="Test Doc",
+            url="http://example.com/doc",
+            source_name="Test Source",
+            jurisdiction="федеральная",
+            region="Московская область",
+            topic=["налоги", "земельное право"],
+            organization=["ФНС", "Минюст"],
+            ingest_date=now,
+            valid_from=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
+            legal_status=LegalStatus.ACTIVE,
+            content="Full text content of the document...",
+            citations=[citation],
+            toc=[toc_node],
+        )
+        assert detail.jurisdiction == "федеральная"
+        assert detail.region == "Московская область"
+        assert detail.topic == ["налоги", "земельное право"]
+        assert detail.organization == ["ФНС", "Минюст"]
+        assert detail.valid_from == datetime(2025, 1, 1, tzinfo=timezone.utc)
+        assert detail.valid_to == datetime(2026, 12, 31, tzinfo=timezone.utc)
+        assert len(detail.citations) == 1
+        assert detail.citations[0].text == "Цитата текста"
+        assert detail.citations[0].section == ["Раздел I", "Глава 2", "Статья 10"]
+        assert len(detail.toc) == 1
+        assert detail.toc[0].title == "Раздел 1"
+        assert detail.toc[0].level == 0
+
+    def test_serialize_roundtrip(self) -> None:
+        now = datetime.now(timezone.utc)
+        detail = DocumentDetail(
+            id="doc-1",
+            title="Test",
+            url="http://example.com",
+            source_name="Src",
+            ingest_date=now,
+            legal_status=LegalStatus.UNKNOWN,
+            content="Content",
+        )
+        d = detail.model_dump()
+        assert d["id"] == "doc-1"
+        assert d["title"] == "Test"
+        assert d["content"] == "Content"
+        assert d["legal_status"] == "unknown"
+        assert d["citations"] == []
+        assert d["toc"] == []
+
+    def test_empty_id_rejected(self) -> None:
+        now = datetime.now(timezone.utc)
+        with pytest.raises(ValidationError):
+            DocumentDetail(
+                id="",
+                title="Test",
+                url="http://example.com",
+                source_name="Src",
+                ingest_date=now,
+                legal_status=LegalStatus.UNKNOWN,
+                content="Content",
+            )
 
 
 # ──────────────────────────────────────────────

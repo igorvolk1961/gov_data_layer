@@ -3,6 +3,7 @@
 from core.models.models import (
     Citation,
     ConfidenceSignals,
+    DocumentDetail,
     LegalStatus,
     OfficialDocument,
     SearchContext,
@@ -17,6 +18,7 @@ from core.models.models import (
 __all__ = [
     "Citation",
     "ConfidenceSignals",
+    "DocumentDetail",
     "LegalStatus",
     "OfficialDocument",
     "SearchContext",

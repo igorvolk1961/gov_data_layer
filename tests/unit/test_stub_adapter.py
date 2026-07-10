@@ -92,7 +92,7 @@ class TestSearch:
     @pytest.mark.asyncio
     async def test_search_with_context_filters_returns_empty(self, adapter: StubAdapter) -> None:
         """Context with filters triggers stub warning and returns empty."""
-        ctx = SearchContext(region="Москва", topic="налоги")
+        ctx = SearchContext(region="Москва", topic=["налоги"])
         results = await adapter.search("НПА", context=ctx)
         assert results == []
 
@@ -115,6 +115,10 @@ class TestSearch:
         assert r.source_name == "Stub Source"
         assert r.url == "https://example.gov.ru/doc-1"
         assert r.legal_status == LegalStatus.ACTIVE
+        assert r.jurisdiction == "федеральная"
+        assert r.region is None
+        assert r.topic == ["общие положения"]
+        assert r.organization == ["Минюст"]
 
 
 # ──────────────────────────────────────────────
@@ -136,7 +140,7 @@ class TestGet:
     async def test_get_existing_doc2(self, adapter: StubAdapter) -> None:
         doc = await adapter.get("doc-2")
         assert doc.id == "doc-2"
-        assert doc.organization == "ФНС"
+        assert doc.organization == ["ФНС"]
         assert doc.jurisdiction == "региональная"
         # doc-2 has valid_to
         assert doc.valid_to is not None

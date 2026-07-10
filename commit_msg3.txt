@@ -1,0 +1,14 @@
+feat: добавлены DocumentDetail, region, topic/organization как list[str]
+
+- DocumentDetail — новая модель для ответа get_source() (полная карточка
+  документа с текстом, цитатами и оглавлением)
+- OfficialDocument.region: str | None — географический регион документа
+- OfficialDocument.topic: str | None → list[str] — множественные рубрики
+- OfficialDocument.organization: str | None → list[str] — множественные органы
+- SearchContext.topic/organization: str | None → list[str] | None
+- SearchResult: добавлены jurisdiction, region, topic, organization
+  (N+1 prevention — агент фильтрует без get_source())
+- StubAdapter: обновлены тестовые данные и search() для новых полей
+- normalize(): добавлена передача новых полей из raw-данных
+- ADR: добавлен раздел 8 (region: str | None)
+- Все 98 тестов зелёные

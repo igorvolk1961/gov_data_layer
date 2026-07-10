@@ -221,7 +221,7 @@ class LangFuseTracer(Tracer):
             self._client = None
             return
         try:
-            from langfuse import Langfuse  # type: ignore[import-untyped]
+            from langfuse import Langfuse
         except ImportError as e:
             logger.error(
                 "langfuse package not installed — falling back to file tracer",
@@ -288,8 +288,8 @@ class LangFuseTracer(Tracer):
         tid = trace_id or uuid.uuid4().hex[:16]
         sid = uuid.uuid4().hex[:16]
 
-        if self._verify_connection():
-            lf_trace = self._client.trace(
+        if self._verify_connection() and self._client is not None:
+            lf_trace = self._client.trace(  # type: ignore[attr-defined]
                 id=tid,
                 name=name,
                 input=None,
