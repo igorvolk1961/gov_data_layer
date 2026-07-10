@@ -21,6 +21,7 @@ from core.models.models import (
     LegalStatus,
     OfficialDocument,
     SearchContext,
+    SearchResponse,
     SearchResult,
     Source,
     SourceAvailability,
@@ -281,12 +282,26 @@ class TestSearchContext:
         assert ctx.region is None
         assert ctx.topic is None
         assert ctx.organization is None
+        assert ctx.official_only is False
+        assert ctx.max_age_days is None
         assert ctx.max_results == 10
+        assert ctx.offset == 0
 
     def test_with_values(self) -> None:
-        ctx = SearchContext(region="Москва", topic="налоги", organization="ФНС", max_results=25)
+        ctx = SearchContext(
+            region="Москва",
+            topic="налоги",
+            organization="ФНС",
+            official_only=True,
+            max_age_days=30,
+            max_results=25,
+            offset=50,
+        )
         assert ctx.region == "Москва"
+        assert ctx.official_only is True
+        assert ctx.max_age_days == 30
         assert ctx.max_results == 25
+        assert ctx.offset == 50
 
     @pytest.mark.parametrize("value", [0, -1, 51, 100])
     def test_max_results_out_of_bounds(self, value: int) -> None:
@@ -297,6 +312,22 @@ class TestSearchContext:
     def test_max_results_boundary(self, value: int) -> None:
         ctx = SearchContext(max_results=value)
         assert ctx.max_results == value
+
+    def test_offset_default(self) -> None:
+        ctx = SearchContext()
+        assert ctx.offset == 0
+
+    def test_offset_negative_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            SearchContext(offset=-1)
+
+    def test_max_age_days_negative_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            SearchContext(max_age_days=0)
+
+    def test_max_age_days_none_allowed(self) -> None:
+        ctx = SearchContext(max_age_days=None)
+        assert ctx.max_age_days is None
 
 
 # ──────────────────────────────────────────────
@@ -350,6 +381,95 @@ class TestSearchResult:
         assert d["legal_status"] == "modified"
         assert d["confidence"]["source_availability"] == "degraded"
         assert d["confidence"]["retrieval_relevance"] == 0.5
+
+
+# ──────────────────────────────────────────────
+#  SearchResponse
+# ──────────────────────────────────────────────
+
+
+class TestSearchResponse:
+    def test_minimal(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.5,
+            data_freshness=now,
+            legal_status=LegalStatus.ACTIVE,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        result = SearchResult(
+            id="doc-1",
+            title="Test",
+            snippet="snip",
+            url="http://example.com",
+            source_name="Src",
+            ingest_date=now,
+            legal_status=LegalStatus.ACTIVE,
+            confidence=cs,
+        )
+        response = SearchResponse(results=[result], total_count=1, offset=0)
+        assert len(response.results) == 1
+        assert response.results[0].id == "doc-1"
+        assert response.total_count == 1
+        assert response.offset == 0
+
+    def test_empty_results(self) -> None:
+        response = SearchResponse(results=[], total_count=0, offset=0)
+        assert response.results == []
+        assert response.total_count == 0
+
+    def test_pagination_metadata(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.5,
+            data_freshness=now,
+            legal_status=LegalStatus.ACTIVE,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        results = [
+            SearchResult(
+                id=f"doc-{i}",
+                title=f"Doc {i}",
+                snippet="snip",
+                url=f"http://example.com/doc-{i}",
+                source_name="Src",
+                ingest_date=now,
+                legal_status=LegalStatus.ACTIVE,
+                confidence=cs,
+            )
+            for i in range(3)
+        ]
+        response = SearchResponse(results=results, total_count=47, offset=10)
+        assert len(response.results) == 3
+        assert response.total_count == 47
+        assert response.offset == 10
+        # Агент проверяет: offset + len(results) < total_count → есть ещё страницы
+        assert response.offset + len(response.results) < response.total_count
+
+    def test_serialize_to_dict(self) -> None:
+        now = datetime.now(timezone.utc)
+        cs = ConfidenceSignals(
+            retrieval_relevance=0.5,
+            data_freshness=now,
+            legal_status=LegalStatus.ACTIVE,
+            source_availability=SourceAvailability.AVAILABLE,
+        )
+        result = SearchResult(
+            id="doc-1",
+            title="Test",
+            snippet="snip",
+            url="http://example.com",
+            source_name="Src",
+            ingest_date=now,
+            legal_status=LegalStatus.ACTIVE,
+            confidence=cs,
+        )
+        response = SearchResponse(results=[result], total_count=1, offset=0)
+        d = response.model_dump()
+        assert d["total_count"] == 1
+        assert d["offset"] == 0
+        assert len(d["results"]) == 1
+        assert d["results"][0]["id"] == "doc-1"
 
 
 # ──────────────────────────────────────────────
