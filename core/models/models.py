@@ -208,7 +208,7 @@ class SearchResult(BaseModel):
     """Результат поиска — компактное представление документа.
 
     Содержит все метаданные, необходимые агенту для фильтрации и ранжирования
-    без дополнительного вызова get_source() (N+1 prevention).
+    без дополнительного вызова get_document_detail() (N+1 prevention).
     """
 
     id: str = Field(min_length=1, description="Идентификатор документа")
@@ -219,22 +219,22 @@ class SearchResult(BaseModel):
     jurisdiction: str | None = Field(
         default=None,
         description="Юрисдикция (федеральная, региональная, ведомственная). "
-        "Позволяет агенту фильтровать результаты без N+1 get_source().",
+        "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
     )
     region: str | None = Field(
         default=None,
         description="Географический регион документа. "
-        "Позволяет агенту фильтровать результаты без N+1 get_source().",
+        "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
     )
     topic: list[str] = Field(
         default_factory=list,
         description="Тематические рубрики. "
-        "Позволяет агенту фильтровать результаты без N+1 get_source().",
+        "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
     )
     organization: list[str] = Field(
         default_factory=list,
         description="Органы, принявшие документ. "
-        "Позволяет агенту фильтровать результаты без N+1 get_source().",
+        "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
     )
     ingest_date: datetime = Field(description="Дата инжеста")
     legal_status: LegalStatus = Field(description="Юридический статус")
@@ -263,9 +263,9 @@ class SearchResponse(BaseModel):
 
 
 class DocumentDetail(BaseModel):
-    """Полная карточка документа — ответ get_source().
+    """Полная карточка документа — ответ get_document_detail().
 
-    Агент вызывает get_source() после выбора документа из результатов поиска.
+    Агент вызывает get_document_detail() после выбора документа из результатов поиска.
     Содержит плоские метаданные (без вложенного OfficialDocument), полный текст,
     цитаты с привязкой к разделам и оглавление.
 
@@ -302,10 +302,10 @@ class DocumentDetail(BaseModel):
     )
     legal_status: LegalStatus = Field(description="Юридический статус")
 
-    # Содержимое (то, ради чего агент вызывает get_source)
+    # Содержимое (то, ради чего агент вызывает get_document_detail)
     content: str = Field(
         description="Полный текст документа в markdown-подобном формате. "
-        "До ~4000 токенов (см. SPEC.md раздел 4). "
+        "До ~4000 токенов (см. plans/SPEC.md раздел 4). "
         "Для очень больших документов может быть обрезан — агент использует "
         "get_toc() для навигации по разделам.",
     )

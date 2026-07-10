@@ -8,8 +8,8 @@ This document defines all data structures (Pydantic models) needed for every MCP
 
 | Tool | Input | Output | Status |
 |------|-------|--------|--------|
-| `search_official_sources(query, context)` | `query: str`, `SearchContext` | `SearchResponse` | ✅ Defined |
-| `get_source(source_id)` | `source_id: str` | `DocumentDetail` | ❌ Needs design |
+| `search_documents(query, context)` | `query: str`, `SearchContext` | `SearchResponse` | ✅ Defined |
+| `get_document_detail(source_id)` | `source_id: str` | `DocumentDetail` | ❌ Needs design |
 | `list_topics(parent_id, query)` | `parent_id: str`, `query: str` | `TopicNode[]` | ✅ Defined |
 | `get_toc(document_id, parent_section_id, query)` | `document_id: str`, `parent_section_id: str`, `query: str` | `TocNode[]` | ✅ Defined |
 
@@ -25,8 +25,8 @@ flowchart LR
     Adapter["SourceAdapter<br/>adapters/base/__init__.py"]
     DB["PostgreSQL + Qdrant"]
 
-    Agent -->|search_official_sources| MCP
-    Agent -->|get_source| MCP
+    Agent -->|search_documents| MCP
+    Agent -->|get_document_detail| MCP
     Agent -->|list_topics| MCP
     Agent -->|get_toc| MCP
 
@@ -81,7 +81,7 @@ Current `SearchResult` has: `id`, `title`, `snippet`, `url`, `source_name`, `ing
 
 Missing: `jurisdiction`, `region`, `topic`, `organization`.
 
-**Consequence:** Agent must call `get_source()` for every result to get these fields — N+1 problem.
+**Consequence:** Agent must call `get_document_detail()` for every result to get these fields — N+1 problem.
 
 **Fix:** Add these fields to `SearchResult`. They are cheap to include (already in `OfficialDocument`).
 
@@ -133,7 +133,7 @@ class OfficialDocument(BaseModel):
 
 ### 4.3 Agent-Facing Models
 
-#### SearchContext (input for search_official_sources)
+#### SearchContext (input for search_documents)
 
 ```python
 class SearchContext(BaseModel):
@@ -147,7 +147,7 @@ class SearchContext(BaseModel):
     offset: int = 0                      # ge=0
 ```
 
-#### SearchResult (output item for search_official_sources)
+#### SearchResult (output item for search_documents)
 
 ```python
 class SearchResult(BaseModel):
@@ -166,9 +166,9 @@ class SearchResult(BaseModel):
     confidence: ConfidenceSignals
 ```
 
-**Why add these fields:** Agent can filter/rank results without calling `get_source()` for each one. The fields are already available in `OfficialDocument` — no extra cost.
+**Why add these fields:** Agent can filter/rank results without calling `get_document_detail()` for each one. The fields are already available in `OfficialDocument` — no extra cost.
 
-#### SearchResponse (output for search_official_sources)
+#### SearchResponse (output for search_documents)
 
 ```python
 class SearchResponse(BaseModel):
@@ -178,13 +178,13 @@ class SearchResponse(BaseModel):
     offset: int = Field(ge=0)
 ```
 
-#### DocumentDetail (output for get_source)
+#### DocumentDetail (output for get_document_detail)
 
 ```python
 class DocumentDetail(BaseModel):
-    """Full document card — response to get_source().
+    """Full document card — response to get_document_detail().
 
-    Agent calls get_source() after selecting a document from search results.
+    Agent calls get_document_detail() after selecting a document from search results.
     Contains flat metadata (not nested OfficialDocument), full text content,
     citations with section paths, and table of contents.
     """
@@ -202,7 +202,7 @@ class DocumentDetail(BaseModel):
     valid_to: datetime | None = None
     legal_status: LegalStatus
 
-    # Full content (why agent calls get_source)
+    # Full content (why agent calls get_document_detail)
     content: str                          # Full text in markdown-like format
     citations: list[Citation] = Field(default_factory=list)
     toc: list[TocNode] = Field(default_factory=list)
@@ -225,7 +225,7 @@ class Citation(BaseModel):
     span_end: int | None = None
 ```
 
-**Note:** `Citation` is currently defined but never used. It becomes alive in `DocumentDetail.citations` when `get_source()` is implemented.
+**Note:** `Citation` is currently defined but never used. It becomes alive in `DocumentDetail.citations` when `get_document_detail()` is implemented.
 
 #### ConfidenceSignals (used in SearchResult)
 
@@ -267,7 +267,7 @@ class TocNode(BaseModel):
 
 ## 5. Request Flow Diagrams
 
-### 5.1 search_official_sources
+### 5.1 search_documents
 
 ```mermaid
 sequenceDiagram
@@ -277,7 +277,7 @@ sequenceDiagram
     participant Adapter as SourceAdapter
     participant Index as Qdrant/PostgreSQL
 
-    Agent->>MCP: search_official_sources(query, context)
+    Agent->>MCP: search_documents(query, context)
     MCP->>MCP: Validate SearchContext
     MCP->>Router: Route query to adapters
     Router->>Adapter: search(query, context)
@@ -290,7 +290,7 @@ sequenceDiagram
     MCP-->>Agent: SearchResponse
 ```
 
-### 5.2 get_source
+### 5.2 get_document_detail
 
 ```mermaid
 sequenceDiagram
@@ -301,7 +301,7 @@ sequenceDiagram
     participant Cache as Redis
     participant Index as Qdrant/PostgreSQL
 
-    Agent->>MCP: get_source(source_id)
+    Agent->>MCP: get_document_detail(source_id)
     MCP->>Cache: Check cache
     alt Cache hit
         Cache-->>MCP: Cached DocumentDetail
@@ -410,7 +410,7 @@ Add `DocumentDetail` to [`core/models/models.py`](core/models/models.py).
 **Impact:**
 - [`core/models/__init__.py`](core/models/__init__.py) — add to exports
 - [`tests/unit/test_models.py`](tests/unit/test_models.py) — add `TestDocumentDetail` class
-- [`adapters/stub/__init__.py`](adapters/stub/__init__.py) — optionally add stub `get_source_detail()` or extend `get()` to return `DocumentDetail`
+- [`adapters/stub/__init__.py`](adapters/stub/__init__.py) — optionally add stub `get_document_detail()` or extend `get()` to return `DocumentDetail`
 
 ### 7.3 Update SPEC.md
 

@@ -162,7 +162,7 @@ class Tracer(ABC):
         """Create a root trace (top-level operation).
 
         Args:
-            name: Operation name (e.g. "search_official_sources").
+            name: Operation name (e.g. "search_documents").
             trace_id: Optional trace ID. Auto-generated if not provided.
             **tags: Metadata tags for filtering.
 

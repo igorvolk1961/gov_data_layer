@@ -61,7 +61,7 @@ make rebuild     # Пересобрать приложение
 ```
 gov-data-layer/
 ├── README.md                    # Как запустить, примеры, архитектура
-├── SPEC.md                      # Спецификация: цель, границы, решения, компромиссы
+├── plans/SPEC.md                 # Спецификация: цель, границы, решения, компромиссы
 ├── plan.md                      # Этот файл
 ├── context.mmd                  # C4 Context
 ├── container.mmd                # C4 Container
@@ -186,8 +186,8 @@ gov-data-layer/
 
 **Что делаем:**
 - MCP-сервер с инструментами:
-  - `search_official_sources(query, context)` — компактные попадания
-  - `get_source(source_id)` — полная карточка акта
+  - `search_documents(query, context)` — компактные попадания
+  - `get_document_detail(source_id)` — полная карточка акта
   - `list_topics(parent_id, query)` — просмотр иерархического рубрикатора (SQLite)
   - `get_toc(document_id, parent_section_id, query)` — навигация по оглавлению документа (SQLite)
 - Строгие JSON-схемы входа/выхода (Pydantic)

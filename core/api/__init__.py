@@ -7,8 +7,8 @@ __all__ = [
 ]
 
 # TODO: Phase 5 — implement MCP server with tools:
-#   - search_official_sources(query, context)
-#   - get_source(source_id)
+#   - search_documents(query, context)
+#   - get_document_detail(source_id)
 #   - list_topics(parent_id, query)
 #   - get_toc(document_id, parent_section_id, query)
 

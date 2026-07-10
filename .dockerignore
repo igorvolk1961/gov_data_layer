@@ -67,7 +67,7 @@ tests/
 .coveragerc
 
 # === Dev/docs files (not needed in production image) ===
-plan.md
+plans/plan.md
 Makefile
 docker-compose*.yml
 Dockerfile

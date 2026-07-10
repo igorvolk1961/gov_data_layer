@@ -22,7 +22,7 @@ version: 1.0.0
 
 ## Доступные инструменты
 
-### 1. `search_official_sources(query, context)`
+### 1. `search_documents(query, context)`
 
 Поиск официальных документов по запросу.
 
@@ -42,7 +42,7 @@ version: 1.0.0
 - `legal_status` — `active` / `revoked` / `modified` / `unknown`
 - `confidence` — разложенные сигналы уверенности
 
-### 2. `get_source(source_id)`
+### 2. `get_document_detail(source_id)`
 
 Получить полную карточку документа.
 
@@ -106,7 +106,7 @@ version: 1.0.0
 Запрос пользователя: "Какая ставка НДФЛ в 2026 году?"
 
 Действия агента:
-1. search_official_sources(query="ставка НДФЛ 2026", context={topic: "налоги"})
+1. search_documents(query="ставка НДФЛ 2026", context={topic: "налоги"})
 2. Проверить legal_status == "active" у результатов
 3. Если retrieval_relevance > 0.7 — использовать как источник
 4. Вернуть пользователю ответ с цитатой и ссылкой
@@ -122,7 +122,7 @@ version: 1.0.0
    → получаем список налоговых рубрик
 2. list_topics(parent_id="налоговые_льготы", query="")
    → получаем подрубрики
-3. search_official_sources(query="налоговые льготы", context={topic: "налоговые_льготы"})
+3. search_documents(query="налоговые льготы", context={topic: "налоговые_льготы"})
 ```
 
 ### Пример 3: Работа с большим документом
@@ -131,8 +131,8 @@ version: 1.0.0
 Запрос пользователя: "Что сказано в НК РФ про вычет на детей?"
 
 Действия агента:
-1. search_official_sources(query="НК РФ вычет на детей")
-2. get_source(source_id="nk-rf")
+1. search_documents(query="НК РФ вычет на детей")
+2. get_document_detail(source_id="nk-rf")
 3. get_toc(document_id="nk-rf", parent_section_id="root", query="вычет")
    → находим нужный раздел
 4. get_toc(document_id="nk-rf", parent_section_id="глава_23", query="")
