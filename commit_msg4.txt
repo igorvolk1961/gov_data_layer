@@ -1,8 +1,0 @@
-refactor: rename MCP tools and move SPEC.md to plans/
-
-- Rename `get_source` → `get_document_detail` (avoid confusion with Source class)
-- Rename `search_official_sources` → `search_documents` (shorter, clearer semantics)
-- Add ADR #9 with rationale for both renames
-- Delete plans/refactor_tools.md (rationale moved to ADR)
-- Move SPEC.md from root to plans/SPEC.md
-- Update all cross-references in .md and .py files

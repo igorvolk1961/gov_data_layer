@@ -75,7 +75,7 @@
 | Компонент | Выбор | Обоснование |
 |-----------|-------|-------------|
 | Язык | Python 3.10+ | Требование задания |
-| Интерфейс | MCP-сервер | Gen-AI ready API, самоописательные инструменты, tool search |
+| Интерфейс | MCP + OpenAPI (Dual API) | MCP — для AI-агентов самоописательные инструменты; OpenAPI FastAPI — для разработчиков, Swagger UI, curl |
 | Векторный поиск | Qdrant | Высокопроизводительная векторная БД, payload filtering, sparse vectors |
 | Метаданные и иерархия | PostgreSQL | Иерархический рубрикатор (темы, регионы, ведомства), рекурсивные CTE, ссылочная целостность через FK |
 | Кэш | Redis | TTL-кэш ответов и карточек |
@@ -83,16 +83,44 @@
 | Валидация | Pydantic v2 | Строгие схемы входа/выхода, типизированные ошибки |
 | Эмбеддинги | sentence-transformers (локально) | Без внешних зависимостей, сменяемая модель |
 
-### 3.5 Gen-AI ready API
+### 3.5 Dual API: MCP + OpenAPI
 
-Инструменты MCP-сервера:
+Слой предоставляет два интерфейса поверх единого core-класса `ODLService`:
+
+#### MCP-сервер (для AI-агентов)
+
+Самоописательные инструменты через MCP Protocol:
 
 1. `search_documents(query, context)` — компактные процитированные попадания
 2. `get_document_detail(source_id)` — полная карточка/текст акта
-3. `list_topics(parent_id, query)` — просмотр иерархического рубрикатора (SQLite)
-4. `get_toc(document_id, parent_section_id, query)` — навигация по оглавлению документа (SQLite)
+3. `list_topics(parent_id, query)` — просмотр иерархического рубрикатора
+4. `get_toc(document_id, parent_section_id, query)` — навигация по оглавлению документа
 
-Свойства контракта:
+#### OpenAPI-сервер (для разработчиков)
+
+FastAPI-приложение с автоматической OpenAPI-документацией Swagger UI:
+
+| Метод | Endpoint | Описание |
+|-------|----------|----------|
+| GET | `/health` | Healthcheck |
+| POST | `/api/v1/search` | Поиск документов |
+| GET | `/api/v1/documents/{source_id}` | Полная карточка документа |
+| GET | `/api/v1/topics` | Рубрикатор |
+| GET | `/api/v1/documents/{document_id}/toc` | Оглавление |
+
+#### Transport-agnostic core
+
+Оба сервера — тонкие адаптеры, делегирующие вызовы `ODLService` `core/service.py`:
+
+```python
+class ODLService:
+    async def search_documents(self, query: str, context: SearchContext | None = None) -> SearchResponse: ...
+    async def get_document_detail(self, source_id: str) -> DocumentDetail: ...
+    async def list_topics(self, parent_id: str, query: str = "") -> list[TopicNode]: ...
+    async def get_toc(self, document_id: str, parent_section_id: str, query: str = "") -> list[TocNode]: ...
+```
+
+#### Свойства контракта (общие для обоих интерфейсов)
 - **Самоописательность** — инструменты и параметры описаны Pydantic-схемами
 - **Строгие детерминированные схемы** — strict structured outputs
 - **Модель-дружественный вывод** — компактный, токен-эффективный
@@ -254,7 +282,7 @@ class Citation(BaseModel):
 | PostgreSQL для метаданных | Добавляет ещё один сервис в docker-compose, но даёт рекурсивные CTE, FK и ссылочную целостность |
 | Локальные эмбеддинги (sentence-transformers) | Медленнее OpenAI API, но без внешних зависимостей |
 | LangFuse как отдельный сервис | Overkill для тестового, но показывает культуру observability |
-| MCP вместо HTTP API | Меньше распространён, но лучше подходит для AI-агентов |
+| Dual API MCP + OpenAPI | Два сервера в одном контейнере через asyncio.gather; небольшое дублирование в адаптерах парсинг запроса/ответа; MCP SDK может ограничивать гибкость |
 
 ## 7. Следующий шаг
 
