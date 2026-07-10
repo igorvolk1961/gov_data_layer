@@ -78,7 +78,7 @@ gov-data-layer/
 ├── core/                        # Ядро слоя (механизм)
 │   ├── __init__.py
 │   ├── main.py                  # Точка входа
-│   ├── service_protocol.py      # ★ Protocol для ODLService (Phase 4)
+│   ├── odl_service.py           # ★ Protocol для ODLService (Phase 4)
 │   ├── service_stub.py          # ★ Заглушка ODLService (Phase 4, временно)
 │   ├── service.py               # ★ ODLService — единый core-класс (Phase 4)
 │   ├── api/                     # Транспортный слой
@@ -279,7 +279,7 @@ flowchart LR
         REST["REST Server<br/>core/api/rest_server.py"]
     end
     subgraph Interface
-        Proto["ODLService Protocol<br/>core/service_protocol.py"]
+        Proto["ODLService Protocol<br/>core/odl_service.py"]
     end
     subgraph Implementations
         Stub["StubODLService<br/>core/service_stub.py<br/>TODO: temporary"]
@@ -295,7 +295,7 @@ flowchart LR
     style Real fill:#e8f4e8,stroke:#090
 ```
 
-#### Шаг 4.0: Protocol для ODLService (`core/service_protocol.py`)
+#### Шаг 4.0: Protocol для ODLService (`core/odl_service.py`)
 - Protocol с 4 методами: `search_documents`, `get_document_detail`, `list_topics`, `get_toc`
 - Импортирует модели из `core/models/models.py`
 - `mypy` проходит
@@ -343,7 +343,7 @@ flowchart LR
 - Добавить зависимости в `pyproject.toml`: `fastapi>=0.109.0`, `uvicorn>=0.27.0`, `httpx>=0.25.0` (dev)
 
 #### Шаг 4.8: Тесты
-- `tests/unit/test_service_protocol.py` — тест соответствия Protocol (mypy + pytest)
+- `tests/unit/test_odl_service.py` — тест соответствия Protocol (mypy + pytest)
 - `tests/unit/test_service.py` — unit-тесты ODLService
 - `tests/integration/test_api.py` — интеграционные тесты (MCP + REST через StubAdapter, потом через ODLService)
 

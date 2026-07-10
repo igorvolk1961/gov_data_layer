@@ -177,6 +177,20 @@ class TestNonConformingClasses:
             async def ingest(self) -> int:
                 return 0
 
+            async def list_topics(self, parent_id: str | None = None, query: str = "") -> list:  # noqa: ARG002
+                return []
+
+            async def get_toc(
+                self,
+                document_id: str,  # noqa: ARG002
+                parent_section_id: str | None = None,  # noqa: ARG002
+                query: str = "",  # noqa: ARG002
+            ) -> list:
+                return []
+
+            async def get_content(self, document_id: str) -> str:  # noqa: ARG002
+                return ""
+
         # isinstance passes because all method names exist
         assert isinstance(WrongSignature(), SourceAdapter)
 
@@ -203,6 +217,20 @@ class TestNonConformingClasses:
 
             async def ingest(self) -> int:
                 return 0
+
+            async def list_topics(self, parent_id: str | None = None, query: str = "") -> list:  # noqa: ARG002
+                return []
+
+            async def get_toc(
+                self,
+                document_id: str,  # noqa: ARG002
+                parent_section_id: str | None = None,  # noqa: ARG002
+                query: str = "",  # noqa: ARG002
+            ) -> list:
+                return []
+
+            async def get_content(self, document_id: str) -> str:  # noqa: ARG002
+                return ""
 
         # isinstance passes because all method names exist
         assert isinstance(SyncMethod(), SourceAdapter)
@@ -231,3 +259,21 @@ class TestProtocolMethodSignatures:
         sig = inspect.signature(SourceAdapter.ingest)
         # ingest should only have 'self'
         assert len(sig.parameters) == 1  # only self
+
+    def test_list_topics_signature(self) -> None:
+        sig = inspect.signature(SourceAdapter.list_topics)
+        params = list(sig.parameters.keys())
+        assert "parent_id" in params
+        assert "query" in params
+
+    def test_get_toc_signature(self) -> None:
+        sig = inspect.signature(SourceAdapter.get_toc)
+        params = list(sig.parameters.keys())
+        assert "document_id" in params
+        assert "parent_section_id" in params
+        assert "query" in params
+
+    def test_get_content_signature(self) -> None:
+        sig = inspect.signature(SourceAdapter.get_content)
+        params = list(sig.parameters.keys())
+        assert "document_id" in params

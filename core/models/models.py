@@ -324,11 +324,19 @@ class DocumentDetail(BaseModel):
 
 
 class TopicNode(BaseModel):
-    """Узел иерархического рубрикатора."""
+    """Узел иерархического рубрикатора.
+
+    Convention: root-level topics use `parent_id=""` (empty string),
+    not `None`. This ensures consistent filtering across all adapters:
+    callers pass `parent_id=""` to query root topics, or `parent_id=None`
+    to get all topics regardless of depth.
+    """
 
     id: str = Field(min_length=1, description="Уникальный идентификатор рубрики")
     name: str = Field(description="Название рубрики")
-    parent_id: str = Field(description="ID родительской рубрики")
+    parent_id: str = Field(
+        description="ID родительской рубрики. Empty string ('') = root-level topic.",
+    )
     description: str | None = Field(default=None, description="Описание рубрики")
     child_count: int = Field(default=0, description="Количество дочерних рубрик")
     document_count: int = Field(default=0, description="Количество документов в рубрике")

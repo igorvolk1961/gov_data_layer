@@ -14,6 +14,8 @@ from core.models.models import (
     SearchResult,
     Source,
     SourceAvailability,
+    TocNode,
+    TopicNode,
 )
 from core.observability.logger import get_logger
 
@@ -64,6 +66,88 @@ class StubAdapter(SourceAdapter):
                 valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
                 legal_status=LegalStatus.ACTIVE,
             ),
+        }
+        # Topics derived from document topics
+        self._topics: list[TopicNode] = [
+            TopicNode(
+                id="topic-root",
+                name="Все рубрики",
+                parent_id="",
+                description="Корневая рубрика",
+                child_count=2,
+                document_count=2,
+            ),
+            TopicNode(
+                id="topic-obshchie-polozheniya",
+                name="Общие положения",
+                parent_id="topic-root",
+                description="Акты общего характера",
+                child_count=0,
+                document_count=1,
+            ),
+            TopicNode(
+                id="topic-nalogi",
+                name="Налоги и сборы",
+                parent_id="topic-root",
+                description="Налоговое законодательство",
+                child_count=0,
+                document_count=1,
+            ),
+        ]
+        # TOC derived from documents
+        self._toc_nodes: dict[str, list[TocNode]] = {
+            "doc-1": [
+                TocNode(
+                    id="sec-1",
+                    document_id="doc-1",
+                    title="Глава 1. Общие положения",
+                    parent_id="",
+                    level=0,
+                    child_count=2,
+                ),
+                TocNode(
+                    id="sec-1-1",
+                    document_id="doc-1",
+                    title="Статья 1. Основные понятия",
+                    parent_id="sec-1",
+                    level=1,
+                    child_count=0,
+                ),
+                TocNode(
+                    id="sec-1-2",
+                    document_id="doc-1",
+                    title="Статья 2. Сфера применения",
+                    parent_id="sec-1",
+                    level=1,
+                    child_count=0,
+                ),
+                TocNode(
+                    id="sec-2",
+                    document_id="doc-1",
+                    title="Глава 2. Заключительные положения",
+                    parent_id="",
+                    level=0,
+                    child_count=0,
+                ),
+            ],
+            "doc-2": [
+                TocNode(
+                    id="sec-2-1",
+                    document_id="doc-2",
+                    title="Раздел I. Общие положения",
+                    parent_id="",
+                    level=0,
+                    child_count=1,
+                ),
+                TocNode(
+                    id="sec-2-1-1",
+                    document_id="doc-2",
+                    title="Статья 1. Налогоплательщики",
+                    parent_id="sec-2-1",
+                    level=1,
+                    child_count=0,
+                ),
+            ],
         }
 
     @property
@@ -159,6 +243,66 @@ class StubAdapter(SourceAdapter):
             valid_to=raw.get("valid_to"),
             legal_status=raw.get("legal_status", LegalStatus.UNKNOWN),
         )
+
+    async def list_topics(
+        self,
+        parent_id: str | None = None,
+        query: str = "",
+    ) -> list[TopicNode]:
+        """Просмотр рубрикатора на основе тем документов.
+
+        When parent_id is None, returns root topics (parent_id == "").
+        When parent_id is provided, returns only topics with that parent_id.
+        """
+        if parent_id is None:
+            result = [t for t in self._topics if t.parent_id == ""]
+        else:
+            result = [t for t in self._topics if t.parent_id == parent_id]
+        if query:
+            result = [t for t in result if query.lower() in t.name.lower()]
+        return result
+
+    async def get_toc(
+        self,
+        document_id: str,
+        parent_section_id: str | None = None,
+        query: str = "",
+    ) -> list[TocNode]:
+        """Оглавление документа.
+
+        When parent_section_id is None, returns root sections (parent_id == "").
+        When parent_section_id is provided, returns only nodes with that parent_id.
+
+        Raises:
+            NotFoundError: Документ не найден.
+        """
+        nodes = self._toc_nodes.get(document_id)
+        if nodes is None:
+            raise NotFoundError(f"Document '{document_id}' not found")
+        if parent_section_id is None:
+            result = [n for n in nodes if n.parent_id == ""]
+        else:
+            result = [n for n in nodes if n.parent_id == parent_section_id]
+        if query:
+            result = [n for n in result if query.lower() in n.title.lower()]
+        return result
+
+    async def get_content(self, document_id: str) -> str:
+        """Получить полный текст документа в markdown-подобном формате.
+
+        Args:
+            document_id: Идентификатор документа.
+
+        Returns:
+            Полный текст документа.
+
+        Raises:
+            NotFoundError: Документ не найден.
+        """
+        doc = self._documents.get(document_id)
+        if doc is None:
+            raise NotFoundError(f"Document '{document_id}' not found")
+        return f"# {doc.title}\n\n{doc.summary or ''}\n\n(Stub content — будет заменён в Phase 4.5)"
 
     async def ingest(self) -> int:
         return len(self._documents)

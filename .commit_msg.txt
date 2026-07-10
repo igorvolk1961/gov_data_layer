@@ -1,0 +1,9 @@
+Phase 4: ODLService layer with SourceAdapter protocol extensions
+
+- Add list_topics, get_toc, get_content methods to SourceAdapter protocol
+- Implement new methods in StubAdapter with stub data
+- Create ODLServiceProtocol and ODLService classes (core layer)
+- Add parent_id convention (empty string for root-level topics)
+- Update plan.md with corrected file references
+- Add comprehensive tests for ODLService and protocol signatures
+- Add .kilocode project instructions file

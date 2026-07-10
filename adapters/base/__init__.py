@@ -8,6 +8,8 @@ from core.models.models import (
     OfficialDocument,
     SearchContext,
     SearchResult,
+    TocNode,
+    TopicNode,
 )
 
 
@@ -78,6 +80,60 @@ class SourceAdapter(Protocol):
 
         Raises:
             SourceUnavailableError: Источник временно недоступен.
+        """
+        ...
+
+    async def list_topics(
+        self,
+        parent_id: str | None = None,
+        query: str = "",
+    ) -> list[TopicNode]:
+        """Просмотр иерархического рубрикатора источника.
+
+        Args:
+            parent_id: ID родительской рубрики. None = корневые рубрики.
+            query: Опциональный поисковый запрос для фильтрации рубрик.
+
+        Returns:
+            Список узлов рубрикатора.
+
+        Raises:
+            NotFoundError: Рубрика не найдена.
+        """
+        ...
+
+    async def get_toc(
+        self,
+        document_id: str,
+        parent_section_id: str | None = None,
+        query: str = "",
+    ) -> list[TocNode]:
+        """Получить оглавление документа.
+
+        Args:
+            document_id: ID документа.
+            parent_section_id: ID родительского раздела. None = корневые разделы.
+            query: Опциональный поисковый запрос для фильтрации разделов.
+
+        Returns:
+            Список узлов оглавления.
+
+        Raises:
+            NotFoundError: Документ или раздел не найден.
+        """
+        ...
+
+    async def get_content(self, document_id: str) -> str:
+        """Получить полный текст документа в markdown-подобном формате.
+
+        Args:
+            document_id: Идентификатор документа.
+
+        Returns:
+            Полный текст документа.
+
+        Raises:
+            NotFoundError: Документ не найден.
         """
         ...
 

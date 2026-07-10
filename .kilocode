@@ -1,0 +1,12 @@
+# Kilo Code Project Instructions
+
+## Naming Convention: file name = snake_case of class name
+
+Each public class must reside in a file whose name matches the snake_case form of the class name.
+
+**Examples:**
+- Class `ODLServiceProtocol` → file `odl_service_protocol.py`
+- Class `ODLService` → file `odl_service.py`
+- Class `SourceAdapter` → file `source_adapter.py`
+
+**Exception:** Files containing multiple closely related classes (e.g., models) may use a module-level name instead of a single class name.
