@@ -1,8 +1,0 @@
-feat: add official_only, max_age_days, offset to SearchContext + SearchResponse
-
-- official_only: bool — filter for official sources only
-- max_age_days: int | None — freshness window (ge=1)
-- offset: int — pagination offset (ge=0), replaces page
-- SearchResponse: response envelope with total_count for pagination
-- SPEC.md: update section 3.6 with SearchContext structure
-- plans/adr-searchcontext-design.md: ADR documenting all decisions

@@ -18,7 +18,7 @@ C4Context
       System_Ext(stub, "Другие официальные источники", "Порталы городов, ведомств и т.д.")
       System_Ext(web, "Общий веб-поиск", "Fallback, если слой не нашёл официального основания")
     }
-    
+
     Rel(user, orch, "задаёт вопрос")
     Rel(orch, agents, "делегирует задачу специализированному агенту")
     Rel(agents, odl, "tool call")
@@ -26,6 +26,6 @@ C4Context
     Rel(odl, pravo, "получает нормативно-правовые акты (НПА)")
     Rel(odl, stub, "получает нормативно-правовые акты (НПА)")
     Rel(agents, web, "fallback - ищет в веб, если слой ODL не нашёл НПА")
-    
+
     UpdateLayoutConfig($c4ShapeInRow="2")
 ```
