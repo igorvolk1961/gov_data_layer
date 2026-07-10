@@ -72,6 +72,23 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # PostgreSQL для метаданных и иерархического рубрикатора
+  metadata-db:
+    image: postgres:16-alpine
+    container_name: odl-metadata-db
+    environment:
+      - POSTGRES_USER=odl
+      - POSTGRES_PASSWORD=odl
+      - POSTGRES_DB=odl_metadata
+    volumes:
+      - metadata_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odl"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
   # Основное приложение (слой официальных данных)
   app:
     build:
@@ -88,17 +105,19 @@ services:
       - LANGFUSE_HOST=http://langfuse:3000
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      - DATABASE_URL=sqlite:///data/official_data.db
+      - DATABASE_URL=postgresql://odl:odl@metadata-db:5432/odl_metadata
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_CLEAR_ON_START=${LOG_CLEAR_ON_START:-false}
       - LOG_FILE=${LOG_FILE:-data/traces.log}
     volumes:
-      - app_data:/app/data  # SQLite файл + логи
+      - app_data:/app/data  # Логи и прочие файлы
       - ./adapters:/app/adapters:ro  # Read-only: переопределяет COPY из образа. Для разработки адаптеров используйте docker-compose.override.yml без :ro
     depends_on:
       qdrant:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      metadata-db:
         condition: service_healthy
       # langfuse intentionally omitted — app handles unavailability gracefully
     healthcheck:
@@ -112,4 +131,5 @@ volumes:
   qdrant_data:
   redis_data:
   langfuse_db_data:
+  metadata_db_data:
   app_data:

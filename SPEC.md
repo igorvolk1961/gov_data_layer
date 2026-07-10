@@ -68,7 +68,7 @@
 | Язык | Python 3.10+ | Требование задания |
 | Интерфейс | MCP-сервер | Gen-AI ready API, самоописательные инструменты, tool search |
 | Векторный поиск | Qdrant | Высокопроизводительная векторная БД, payload filtering, sparse vectors |
-| Метаданные и иерархия | SQLite | Иерархический рубрикатор (темы, регионы, ведомства), рекурсивные SQL-запросы |
+| Метаданные и иерархия | PostgreSQL | Иерархический рубрикатор (темы, регионы, ведомства), рекурсивные CTE, ссылочная целостность через FK |
 | Кэш | Redis | TTL-кэш ответов и карточек |
 | Observability | LangFuse | Трейсинг LLM-вызовов, метрики, отладка |
 | Валидация | Pydantic v2 | Строгие схемы входа/выхода, типизированные ошибки |
@@ -123,6 +123,40 @@
 4. **Model-friendly.** Названия полей интуитивно понятны даже не-эксперту. Pydantic-схема с `description` даёт агенту понять семантику каждого поля (self-describing API).
 
 5. **Мягкая деградация.** Все поля опциональны. При неполноте контекста слой работает best-effort с честным сигналом.
+
+#### Нормализация jurisdiction в SQLite
+
+Поле `jurisdiction` в канонической модели `OfficialDocument` объявлено как `str | None` — это осознанный выбор: Pydantic не валидирует список допустимых значений, что даёт гибкость при появлении новых юрисдикций без миграций кода.
+
+Однако при записи в PostgreSQL (реляционная БД для метаданных) строка нормализуется через lookup-таблицу:
+
+```sql
+CREATE TABLE jurisdiction (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    parent_id INTEGER REFERENCES jurisdiction(id)
+);
+
+CREATE TABLE official_document (
+    id VARCHAR PRIMARY KEY,
+    jurisdiction_id INTEGER REFERENCES jurisdiction(id),
+    ...
+);
+```
+
+Слой нормализует при записи:
+```python
+def _ensure_jurisdiction(self, name: str) -> int:
+    cur = self.db.execute(
+        "INSERT OR IGNORE INTO jurisdiction (name) VALUES (?)", (name,)
+    )
+    cur = self.db.execute(
+        "SELECT id FROM jurisdiction WHERE name = ?", (name,)
+    )
+    return cur.fetchone()[0]
+```
+
+**Зачем:** иерархический рубрикатор (темы, регионы, ведомства) требует рекурсивных SQL-запросов и ссылочной целостности — это невыполнимо в Qdrant с его денормализованными payload. SQLite используется именно для этой задачи (см. раздел 3.4).
 
 #### Пагинация: почему результаты, а не токены или страницы
 
@@ -183,7 +217,7 @@
 
 | Решение | Компромисс |
 |---------|-----------|
-| SQLite вместо Postgres | Не подходит для production с высокой нагрузкой, но достаточно для прототипа |
+| PostgreSQL для метаданных | Добавляет ещё один сервис в docker-compose, но даёт рекурсивные CTE, FK и ссылочную целостность |
 | Локальные эмбеддинги (sentence-transformers) | Медленнее OpenAI API, но без внешних зависимостей |
 | LangFuse как отдельный сервис | Overkill для тестового, но показывает культуру observability |
 | MCP вместо HTTP API | Меньше распространён, но лучше подходит для AI-агентов |
@@ -195,4 +229,4 @@
 - Иерархический рубрикатор в SQLite
 - Production-ready healthcheck и метрики (Prometheus)
 - Rate limiting и circuit breaker для адаптеров
-- Миграция SQLite → Postgres для production
+- Миграция схем PostgreSQL (Alembic) для production
