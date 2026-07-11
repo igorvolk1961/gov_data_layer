@@ -9,6 +9,7 @@ Errors (ERROR+) are duplicated to console via logger.py.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
@@ -128,7 +129,8 @@ class _Span:
             # Record all exceptions (Exception and BaseException like KeyboardInterrupt)
             self.set_error(exc_val)
         if self._write_callback:
-            self._write_callback(self._data)
+            with contextlib.suppress(Exception):
+                self._write_callback(self._data)
 
 
 # ──────────────────────────────────────────────
@@ -215,8 +217,8 @@ class LangFuseTracer(Tracer):
         """Initialize LangFuse client (lazy — no network call)."""
         if not self._config.langfuse_public_key or not self._config.langfuse_secret_key:
             logger.warning(
-                "langfuse keys not set, skipping initialization",
-                extra={"host": self._config.langfuse_host},
+                "langfuse keys not set, skipping initialization (host=%s)",
+                self._config.langfuse_host,
             )
             self._client = None
             return
@@ -224,8 +226,8 @@ class LangFuseTracer(Tracer):
             from langfuse import Langfuse
         except ImportError as e:
             logger.error(
-                "langfuse package not installed — falling back to file tracer",
-                extra={"error": str(e)},
+                "langfuse package not installed — falling back to file tracer: %s",
+                e,
             )
             self._client = None
             return
@@ -237,13 +239,14 @@ class LangFuseTracer(Tracer):
                 secret_key=self._config.langfuse_secret_key,
             )
             logger.info(
-                "langfuse client initialized (lazy)",
-                extra={"host": self._config.langfuse_host},
+                "langfuse client initialized (lazy) at %s",
+                self._config.langfuse_host,
             )
         except (ValueError, TypeError) as e:
             logger.error(
-                "langfuse configuration error",
-                extra={"host": self._config.langfuse_host, "error": str(e)},
+                "langfuse configuration error (host=%s): %s",
+                self._config.langfuse_host,
+                e,
             )
             self._client = None
 
@@ -267,8 +270,8 @@ class LangFuseTracer(Tracer):
             return True
         except Exception as e:
             logger.error(
-                "langfuse connection check failed — will retry",
-                extra={"error": str(e)},
+                "langfuse connection check failed — will retry: %s",
+                e,
             )
             # Don't set self._client = None — keep client for retry after TTL
             self._connection_verified = False
@@ -289,7 +292,7 @@ class LangFuseTracer(Tracer):
         sid = uuid.uuid4().hex[:16]
 
         if self._verify_connection() and self._client is not None:
-            lf_trace = self._client.trace(  # type: ignore[attr-defined]
+            lf_trace = self._client.trace(
                 id=tid,
                 name=name,
                 input=None,
@@ -354,31 +357,42 @@ class FileFallbackTracer(Tracer):
         if config.log_clear_on_start and os.path.exists(config.log_file):
             try:
                 os.remove(config.log_file)
-                logger.info(
-                    "log file cleared on start",
-                    extra={"path": config.log_file},
-                )
+                logger.info("log file cleared on start: %s", config.log_file)
             except OSError as e:
                 logger.error(
-                    "failed to clear log file",
-                    extra={"path": config.log_file, "error": str(e)},
+                    "failed to clear log file %s: %s",
+                    config.log_file,
+                    e,
                 )
 
     def _ensure_log_dir(self) -> None:
         """Create log file directory if it doesn't exist."""
         log_dir = os.path.dirname(self._config.log_file)
         if log_dir:
-            os.makedirs(log_dir, exist_ok=True)
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+            except OSError as e:
+                logger.error(
+                    "failed to create log directory %s: %s",
+                    log_dir,
+                    e,
+                )
 
     def _write(self, data: SpanData) -> None:
         """Write one span to file as a JSON line."""
         try:
+            # Ensure directory exists on every write (may have been deleted at runtime)
+            log_dir = os.path.dirname(self._config.log_file)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
             with open(self._config.log_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(data.to_dict(), ensure_ascii=False, default=str) + "\n")
-        except OSError as e:
+                line = json.dumps(data.to_dict(), ensure_ascii=False, default=str) + "\n"
+                f.write(line)
+        except Exception as e:
             logger.error(
-                "failed to write trace log",
-                extra={"path": self._config.log_file, "error": str(e)},
+                "failed to write trace log to %s: %s",
+                self._config.log_file,
+                e,
             )
 
     def trace(

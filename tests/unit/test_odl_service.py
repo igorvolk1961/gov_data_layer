@@ -38,7 +38,7 @@ def tracer_mock() -> MagicMock:
 @pytest.fixture
 def service(tracer_mock: MagicMock) -> ODLService:
     """ODLService with StubAdapter and a no-op tracer."""
-    return ODLService(adapter=StubAdapter(), tracer=tracer_mock)
+    return ODLService(adapters=[StubAdapter()], tracer=tracer_mock)
 
 
 # -- search_documents ----------------------------------------------------------
@@ -146,9 +146,9 @@ class TestSearchDocuments:
         """Verify context is forwarded to the adapter and traced."""
         ctx = SearchContext(offset=3)
         # Spy on adapter.search to verify context is forwarded
-        service._adapter.search = AsyncMock(wraps=service._adapter.search)  # type: ignore[method-assign]
+        service._adapters[0].search = AsyncMock(wraps=service._adapters[0].search)  # type: ignore[method-assign]
         await service.search_documents("тест", context=ctx)
-        service._adapter.search.assert_awaited_once_with("тест", ctx)
+        service._adapters[0].search.assert_awaited_once_with("тест", ctx)
         tracer_mock.trace.assert_called_once_with(
             "search_documents",
             query="тест",
@@ -373,9 +373,9 @@ class TestGetToc:
         toc = await service.get_toc(document_id="doc-1")
         assert len(toc) > 0
         for node in toc:
-            assert node.parent_id == "", (
-                f"Expected root section (parent_id=''), got parent_id='{node.parent_id}'"
-            )
+            assert (
+                node.parent_id == ""
+            ), f"Expected root section (parent_id=''), got parent_id='{node.parent_id}'"
 
     async def test_filter_by_query(self, service: ODLService) -> None:
         """Query filters root sections by title."""

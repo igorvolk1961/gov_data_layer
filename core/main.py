@@ -1,6 +1,6 @@
 """Application entry point — ODL REST + MCP server.
 
-Создаёт StubAdapter → ODLService → RESTServer (+ MCPServer).
+Создаёт адаптеры из конфига → ODLService → RESTServer (+ MCPServer).
 Запуск REST и MCP параллельно через asyncio.gather.
 """
 
@@ -9,16 +9,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from typing import cast
 
 import uvicorn
 from dotenv import load_dotenv
 
-from adapters.stub import StubAdapter
-from core.api.config import ConfigError, ServerConfig
+from adapters.base.source_adapter import SourceAdapter
+from core.api.config import ConfigError, ServerConfig, instantiate_adapter
 from core.api.rest_server import create_app
 from core.observability import configure as configure_observability
 from core.observability import get_logger, get_tracer
-from core.observability.logger import VALID_LOG_LEVELS, get_effective_level_name
+from core.observability.logger import VALID_LOG_LEVELS, get_effective_level_name, reconfigure
 from core.odl_service import ODLService
 
 
@@ -69,6 +70,11 @@ def main() -> None:
     # Load .env before any config reads
     load_dotenv()
 
+    # Re-apply LOG_LEVEL now that .env is loaded (module-level get_logger()
+    # calls in tracer.py / stub_adapter.py may have triggered
+    # _ensure_configured() before dotenv was available).
+    reconfigure()
+
     configure_observability()
 
     logger = get_logger("odl.main")
@@ -87,9 +93,16 @@ def main() -> None:
         span.set_input({"host": config.api_host, "port": config.api_port})
         span.set_output({"status": "started"})
 
-    # Create adapter → service → servers
-    adapter = StubAdapter()
-    service = ODLService(adapter=adapter)
+    # Create adapters from config → service → servers
+    adapters: list[SourceAdapter] = [
+        cast(SourceAdapter, instantiate_adapter(*adapter_path.rsplit(":", 1)))
+        for adapter_path in config.adapters
+    ]
+    logger.info(
+        "Loaded adapters: %s",
+        [a.source_id for a in adapters],
+    )
+    service = ODLService(adapters=adapters)
 
     # Create FastAPI app
     app = create_app(service)

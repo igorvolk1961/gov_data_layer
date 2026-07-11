@@ -1,8 +1,8 @@
 """ODLService — единый core-класс, реализующий ODLServiceProtocol.
 
-Делегирует все методы SourceAdapter'у (через DI).
-На данный момент (Phase 4) используется StubAdapter.
-Phase 4.5 заменит заглушки на реальную бизнес-логику.
+Принимает список SourceAdapter'ов (через DI) и делегирует им методы Protocol.
+При поиске опрашивает все адаптеры и агрегирует результаты.
+При получении конкретного документа определяет нужный адаптер по source_id.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from core.models.models import (
     DocumentDetail,
     SearchContext,
     SearchResponse,
+    SearchResult,
     TocNode,
     TopicNode,
 )
@@ -23,6 +24,8 @@ from core.observability.tracer import Tracer
 from core.odl_service_protocol import ODLServiceProtocol
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from adapters.base import SourceAdapter
 
 logger = get_logger(__name__)
@@ -31,15 +34,16 @@ logger = get_logger(__name__)
 class ODLService(ODLServiceProtocol):
     """Единый core-класс ODLService.
 
-    Принимает SourceAdapter (через DI) и делегирует ему все 4 метода Protocol.
+    Принимает список SourceAdapter'ов (через DI) и делегирует им методы Protocol.
+    При поиске опрашивает все адаптеры и агрегирует результаты.
     """
 
     def __init__(
         self,
-        adapter: SourceAdapter,
+        adapters: Sequence[SourceAdapter],
         tracer: Tracer | None = None,
     ) -> None:
-        self._adapter = adapter
+        self._adapters = list(adapters)
         self._tracer: Tracer | None = tracer
 
     @property
@@ -53,12 +57,25 @@ class ODLService(ODLServiceProtocol):
             self._tracer = get_tracer()
         return self._tracer
 
+    def _get_adapter(self, source_id: str) -> SourceAdapter:
+        """Find the adapter that owns the given source_id.
+
+        Matches by prefix: if source_id starts with adapter.source_id + '-',
+        or equals adapter.source_id, that adapter is selected.
+        Falls back to the first adapter if no match is found.
+        """
+        for adapter in self._adapters:
+            if source_id == adapter.source_id or source_id.startswith(f"{adapter.source_id}-"):
+                return adapter
+        # Fallback to first adapter
+        return self._adapters[0]
+
     async def search_documents(
         self,
         query: str,
         context: SearchContext | None = None,
     ) -> SearchResponse:
-        """Поиск документов через StubAdapter."""
+        """Поиск документов по всем адаптерам с агрегацией результатов."""
         with self.tracer.trace("search_documents", query=query) as span:
             span.set_input(
                 {
@@ -66,10 +83,19 @@ class ODLService(ODLServiceProtocol):
                     "context": context.model_dump(mode="json") if context else None,
                 }
             )
-            results = await self._adapter.search(query, context)
+            all_results: list[SearchResult] = []
+            for adapter in self._adapters:
+                try:
+                    results = await adapter.search(query, context)
+                    all_results.extend(results)
+                except Exception:
+                    logger.exception(
+                        "Adapter %s failed during search — skipping",
+                        adapter.source_id,
+                    )
             response = SearchResponse(
-                results=results,
-                total_count=len(results),
+                results=all_results,
+                total_count=len(all_results),
                 offset=context.offset if context else 0,
             )
             span.set_output({"total_count": response.total_count, "offset": response.offset})
@@ -79,12 +105,13 @@ class ODLService(ODLServiceProtocol):
         self,
         source_id: str,
     ) -> DocumentDetail:
-        """Полная карточка документа — делегирует адаптеру."""
+        """Полная карточка документа — делегирует адаптеру по source_id."""
         with self.tracer.trace("get_document_detail", source_id=source_id) as span:
             span.set_input({"source_id": source_id})
-            doc = await self._adapter.get(source_id)
+            adapter = self._get_adapter(source_id)
+            doc = await adapter.get(source_id)
             try:
-                toc = await self._adapter.get_toc(document_id=doc.id)
+                toc = await adapter.get_toc(document_id=doc.id)
             except NotFoundError:
                 # Document exists but TOC not found — return empty TOC
                 # rather than failing the entire document detail request.
@@ -96,7 +123,7 @@ class ODLService(ODLServiceProtocol):
                 )
                 toc = []
             try:
-                content = await self._adapter.get_content(document_id=doc.id)
+                content = await adapter.get_content(document_id=doc.id)
             except NotFoundError:
                 logger.warning(
                     "Content not found for document %s (source_id=%s) — returning empty content",
@@ -136,12 +163,21 @@ class ODLService(ODLServiceProtocol):
         parent_id: str | None = None,
         query: str = "",
     ) -> list[TopicNode]:
-        """Просмотр рубрикатора — делегирует адаптеру."""
+        """Просмотр рубрикатора — делегирует первому адаптеру."""
         with self.tracer.trace("list_topics", parent_id=str(parent_id)) as span:
             span.set_input({"parent_id": parent_id, "query": query})
-            result = await self._adapter.list_topics(parent_id=parent_id, query=query)
-            span.set_output({"count": len(result)})
-            return result
+            all_topics: list[TopicNode] = []
+            for adapter in self._adapters:
+                try:
+                    topics = await adapter.list_topics(parent_id=parent_id, query=query)
+                    all_topics.extend(topics)
+                except Exception:
+                    logger.exception(
+                        "Adapter %s failed during list_topics — skipping",
+                        adapter.source_id,
+                    )
+            span.set_output({"count": len(all_topics)})
+            return all_topics
 
     async def get_toc(
         self,
@@ -149,7 +185,7 @@ class ODLService(ODLServiceProtocol):
         parent_section_id: str | None = None,
         query: str = "",
     ) -> list[TocNode]:
-        """Оглавление документа — делегирует адаптеру."""
+        """Оглавление документа — делегирует адаптеру по source_id."""
         with self.tracer.trace("get_toc", document_id=document_id) as span:
             span.set_input(
                 {
@@ -158,7 +194,8 @@ class ODLService(ODLServiceProtocol):
                     "query": query,
                 }
             )
-            result = await self._adapter.get_toc(
+            adapter = self._get_adapter(document_id)
+            result = await adapter.get_toc(
                 document_id=document_id,
                 parent_section_id=parent_section_id,
                 query=query,

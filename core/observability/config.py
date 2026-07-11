@@ -7,6 +7,26 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+
+def _resolve_log_file(path: str) -> str:
+    """Resolve a (possibly relative) log file path against the project root.
+
+    The project root is determined by walking up from this file's location
+    until ``pyproject.toml`` is found.  This ensures the log file lands in
+    the expected location regardless of the process working directory.
+    """
+    p = Path(path)
+    if p.is_absolute():
+        return str(p)
+    # Walk up from core/observability/ to find the project root
+    here = Path(__file__).resolve().parent  # core/observability/
+    for parent in [here, *here.parents]:
+        if (parent / "pyproject.toml").is_file():
+            return str(parent / p)
+    # Fallback: resolve against CWD
+    return str(Path.cwd() / p)
 
 
 @dataclass
@@ -28,6 +48,10 @@ class ObservabilityConfig:
     log_level: str = "INFO"
     log_clear_on_start: bool = False
     log_file: str = "data/traces.log"
+
+    def __post_init__(self) -> None:
+        """Resolve relative log_file path to an absolute path."""
+        self.log_file = _resolve_log_file(self.log_file)
 
     @classmethod
     def from_env(cls) -> ObservabilityConfig:

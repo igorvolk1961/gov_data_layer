@@ -4,7 +4,9 @@ No structlog. The single observability channel is Tracer (see tracer.py).
 Errors are duplicated to console for operational visibility.
 
 NOTE: LOG_LEVEL is read lazily from the environment on first call to
-get_logger(), so it picks up values loaded by dotenv after import.
+get_logger().  However, if a module calls get_logger() at import time
+(before dotenv loads .env), the level will default to ERROR.  Call
+reconfigure() after load_dotenv() to pick up the actual LOG_LEVEL.
 """
 
 from __future__ import annotations
@@ -101,6 +103,34 @@ def get_effective_level_name() -> str:
         Upper-case log level name string.
     """
     return _effective_level_name
+
+
+def reconfigure() -> None:
+    """Re-read LOG_LEVEL from environment and reapply to the logger.
+
+    Call this after load_dotenv() if any module-level get_logger() calls
+    may have triggered _ensure_configured() before .env was loaded.
+
+    Thread-safe: uses the same lock as _ensure_configured.
+    """
+    global _effective_level_name
+    with _lock:
+        level_name = os.getenv("LOG_LEVEL", "ERROR").upper()
+        level = getattr(logging, level_name, None)
+        if not isinstance(level, int):
+            level = logging.ERROR
+            _effective_level_name = "ERROR"
+            _odl_logger.warning(
+                "Unknown LOG_LEVEL '%s', falling back to ERROR",
+                level_name,
+            )
+        else:
+            _effective_level_name = level_name
+        _odl_logger.setLevel(level)
+        # Update the console handler level too
+        for h in _odl_logger.handlers:
+            if isinstance(h, logging.StreamHandler):
+                h.setLevel(level)
 
 
 def reset_for_testing() -> None:
