@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from langfuse import Langfuse as _LangfuseClient
+    pass
 
 from core.observability.config import ObservabilityConfig
 from core.observability.logger import get_logger
@@ -208,7 +208,7 @@ class LangFuseTracer(Tracer):
 
     def __init__(self, config: ObservabilityConfig) -> None:
         self._config = config
-        self._client: _LangfuseClient | None = None
+        self._client: Any = None
         self._connection_verified: bool = False
         self._last_verify_time: float = 0.0
         self._init_client()
