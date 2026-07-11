@@ -190,9 +190,10 @@ class TestGetDocumentDetail:
         assert isinstance(detail.organization, list)
         assert isinstance(detail.legal_status, LegalStatus)
 
-    async def test_content_is_non_empty(self, service: ODLService) -> None:
+    async def test_citations_and_toc_are_present(self, service: ODLService) -> None:
         detail = await service.get_document_detail("doc-1")
-        assert detail.content, "content must be non-empty"
+        assert isinstance(detail.citations, list)
+        assert isinstance(detail.toc, list)
 
     async def test_citations_are_citation_instances(
         self,

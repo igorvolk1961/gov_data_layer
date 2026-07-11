@@ -237,7 +237,6 @@ def _make_document_detail(
     source_name: str = "Test Source",
     ingest_date: datetime.datetime | None = None,
     legal_status: LegalStatus = LegalStatus.ACTIVE,
-    content: str = "Full text content",
 ) -> DocumentDetail:
     if ingest_date is None:
         ingest_date = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
@@ -248,7 +247,6 @@ def _make_document_detail(
         source_name=source_name,
         ingest_date=ingest_date,
         legal_status=legal_status,
-        content=content,
     )
 
 

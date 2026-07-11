@@ -509,7 +509,6 @@ class TestDocumentDetail:
             source_name="Test Source",
             ingest_date=now,
             legal_status=LegalStatus.ACTIVE,
-            content="Full text content",
         )
         assert detail.id == "doc-1"
         assert detail.title == "Test Doc"
@@ -523,7 +522,6 @@ class TestDocumentDetail:
         assert detail.valid_from is None
         assert detail.valid_to is None
         assert detail.legal_status == LegalStatus.ACTIVE
-        assert detail.content == "Full text content"
         assert detail.citations == []
         assert detail.toc == []
 
@@ -558,7 +556,6 @@ class TestDocumentDetail:
             valid_from=datetime(2025, 1, 1, tzinfo=timezone.utc),
             valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
             legal_status=LegalStatus.ACTIVE,
-            content="Full text content of the document...",
             citations=[citation],
             toc=[toc_node],
         )
@@ -584,12 +581,10 @@ class TestDocumentDetail:
             source_name="Src",
             ingest_date=now,
             legal_status=LegalStatus.UNKNOWN,
-            content="Content",
         )
         d = detail.model_dump()
         assert d["id"] == "doc-1"
         assert d["title"] == "Test"
-        assert d["content"] == "Content"
         assert d["legal_status"] == "unknown"
         assert d["citations"] == []
         assert d["toc"] == []
@@ -604,7 +599,6 @@ class TestDocumentDetail:
                 source_name="Src",
                 ingest_date=now,
                 legal_status=LegalStatus.UNKNOWN,
-                content="Content",
             )
 
 

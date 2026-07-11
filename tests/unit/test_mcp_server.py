@@ -233,7 +233,6 @@ class TestGetDocumentDetail:
             source_name="Test Source",
             ingest_date=_now(),
             legal_status=LegalStatus.ACTIVE,
-            content="Full text content",
         )
 
     @pytest.mark.asyncio
@@ -251,7 +250,6 @@ class TestGetDocumentDetail:
         assert "error" not in result
         assert result["id"] == "doc-1"
         assert result["title"] == "Test Document"
-        assert result["content"] == "Full text content"
         mock_service.get_document_detail.assert_awaited_once_with("doc-1")
 
     @pytest.mark.asyncio

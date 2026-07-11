@@ -266,8 +266,8 @@ class DocumentDetail(BaseModel):
     """Полная карточка документа — ответ get_document_detail().
 
     Агент вызывает get_document_detail() после выбора документа из результатов поиска.
-    Содержит плоские метаданные (без вложенного OfficialDocument), полный текст,
-    цитаты с привязкой к разделам и оглавление.
+    Содержит плоские метаданные (без вложенного OfficialDocument), цитаты
+    с привязкой к разделам и оглавление.
 
     Агент НЕ видит OfficialDocument — это внутренняя модель слоя.
     """
@@ -303,12 +303,6 @@ class DocumentDetail(BaseModel):
     legal_status: LegalStatus = Field(description="Юридический статус")
 
     # Содержимое (то, ради чего агент вызывает get_document_detail)
-    content: str = Field(
-        description="Полный текст документа в markdown-подобном формате. "
-        "До ~4000 токенов (см. plans/SPEC.md раздел 4). "
-        "Для очень больших документов может быть обрезан — агент использует "
-        "get_toc() для навигации по разделам.",
-    )
     citations: list[Citation] = Field(
         default_factory=list,
         description="Цитаты с привязкой к разделам документа. "

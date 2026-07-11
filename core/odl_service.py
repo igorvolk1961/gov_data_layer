@@ -122,15 +122,6 @@ class ODLService(ODLServiceProtocol):
                     source_id,
                 )
                 toc = []
-            try:
-                content = await adapter.get_content(document_id=doc.id)
-            except NotFoundError:
-                logger.warning(
-                    "Content not found for document %s (source_id=%s) — returning empty content",
-                    doc.id,
-                    source_id,
-                )
-                content = ""
             detail = DocumentDetail(
                 id=doc.id,
                 title=doc.title,
@@ -144,7 +135,6 @@ class ODLService(ODLServiceProtocol):
                 valid_from=doc.valid_from,
                 valid_to=doc.valid_to,
                 legal_status=doc.legal_status,
-                content=content,
                 citations=[
                     Citation(
                         text=doc.summary or doc.title,
