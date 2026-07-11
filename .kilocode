@@ -10,3 +10,11 @@ Each public class must reside in a file whose name matches the snake_case form o
 - Class `SourceAdapter` → file `source_adapter.py`
 
 **Exception:** Files containing multiple closely related classes (e.g., models) may use a module-level name instead of a single class name.
+
+## Commit Workflow
+
+When asked to perform a git commit:
+
+1. Create a temporary file with the commit message inside `.git\` (e.g., `.git\COMMIT_EDITMSG`). Files inside `.git\` are automatically ignored by git.
+2. Run `git add -A && git commit -F <temp_file>`.
+3. After successful commit, delete the temporary file.
