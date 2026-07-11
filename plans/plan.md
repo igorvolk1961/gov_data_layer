@@ -335,22 +335,18 @@ flowchart LR
 - Интеграция с Tracer
 - Преобразование `OfficialDocument` → `DocumentDetail`
 
-#### Шаг 4.6: Удаление заглушки
-- Удалить `core/service_stub.py`
-- В `core/main.py` заменить StubODLService на ODLService
-
-#### Шаг 4.7: Обновить docker-compose и зависимости
+#### Шаг 4.6: Обновить docker-compose и зависимости
 - Порт 8000 для REST API (уже есть)
 - Добавить healthcheck для REST
 - Обновить Dockerfile (зависимости)
 - Добавить зависимости в `pyproject.toml`: `fastapi>=0.109.0`, `uvicorn>=0.27.0`, `httpx>=0.25.0` (dev)
 
-#### Шаг 4.8: Тесты
+#### Шаг 4.7: Тесты
 - `tests/unit/test_odl_service.py` — тест соответствия Protocol (mypy + pytest)
 - `tests/unit/test_service.py` — unit-тесты ODLService
 - `tests/integration/test_api.py` — интеграционные тесты (MCP + REST через StubAdapter, потом через ODLService)
 
-#### Шаг 4.9: Обновить документацию
+#### Шаг 4.8: Обновить документацию
 - `SPEC.md` — добавить раздел про Dual API
 - `examples/SKILL.md` — обновить под актуальные модели
 - `README.md` — примеры запросов к REST API
