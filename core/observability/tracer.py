@@ -289,7 +289,7 @@ class LangFuseTracer(Tracer):
         sid = uuid.uuid4().hex[:16]
 
         if self._verify_connection() and self._client is not None:
-            lf_trace = self._client.trace(  # type: ignore[attr-defined]
+            lf_trace = self._client.trace(
                 id=tid,
                 name=name,
                 input=None,

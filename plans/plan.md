@@ -305,21 +305,24 @@ flowchart LR
 - Все методы помечены `# TODO: Phase 4.5 — replace with real ODLService`
 - Возвращает хардкодные ответы
 
-#### Шаг 4.2: MCP-сервер (`core/api/mcp_server.py`)
+#### Шаг 4.1.5: Добавить зависимости в `pyproject.toml`
+- `fastapi>=0.109.0`, `uvicorn>=0.27.0` — основные
+- `httpx>=0.25.0` — dev (для тестов)
+
+#### Шаг 4.2: REST-сервер (`core/api/rest_server.py`)
+- FastAPI-приложение с 4 эндпоинтами:
+  - `POST /api/v1/search` — `search_documents`
+  - `GET /api/v1/documents/{source_id}` — `get_document_detail`
+  - `GET /api/v1/topics` — `list_topics`
+  - `GET /api/v1/documents/{document_id}/toc` — `get_toc`
+- Swagger UI автоматически на `/docs`
+- Тонкий адаптер — только парсинг входа/выхода
+
+#### Шаг 4.3: MCP-сервер (`core/api/mcp_server.py`)
 - Принимает `ODLServiceProtocol` в конструкторе
 - 4 инструмента: `search_documents`, `get_document_detail`, `list_topics`, `get_toc`
 - Тонкий адаптер — только парсинг входа/выхода
 - Использование `mcp` SDK
-
-#### Шаг 4.3: REST-сервер (`core/api/rest_server.py`)
-- FastAPI, принимает `ODLServiceProtocol` через DI
-- Endpoints:
-  - `GET /health`
-  - `POST /api/v1/search` — поиск документов
-  - `GET /api/v1/documents/{source_id}` — полная карточка
-  - `GET /api/v1/topics` — рубрикатор
-  - `GET /api/v1/documents/{document_id}/toc` — оглавление
-- Swagger UI на `/docs`
 
 #### Шаг 4.4: Точка входа (`core/main.py`)
 - Создаёт StubAdapter → StubODLService → MCPServer + RESTServer

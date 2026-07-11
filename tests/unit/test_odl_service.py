@@ -373,9 +373,9 @@ class TestGetToc:
         toc = await service.get_toc(document_id="doc-1")
         assert len(toc) > 0
         for node in toc:
-            assert (
-                node.parent_id == ""
-            ), f"Expected root section (parent_id=''), got parent_id='{node.parent_id}'"
+            assert node.parent_id == "", (
+                f"Expected root section (parent_id=''), got parent_id='{node.parent_id}'"
+            )
 
     async def test_filter_by_query(self, service: ODLService) -> None:
         """Query filters root sections by title."""

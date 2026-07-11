@@ -47,9 +47,9 @@ def _assert_conforms_to_protocol(cls: type, protocol: type) -> None:
         impl_sig = inspect.signature(impl_method)
         proto_params = list(proto_sig.parameters.keys())[1:]  # skip 'self'
         impl_params = list(impl_sig.parameters.keys())[1:]
-        assert (
-            proto_params == impl_params
-        ), f"Signature mismatch for '{name}': protocol expects {proto_params}, got {impl_params}"
+        assert proto_params == impl_params, (
+            f"Signature mismatch for '{name}': protocol expects {proto_params}, got {impl_params}"
+        )
 
 
 class TestProtocolContract:
