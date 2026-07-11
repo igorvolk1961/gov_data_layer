@@ -12,6 +12,13 @@ down:
 test:
 	docker compose exec app python -m pytest tests/ -v
 
+# Прогнать тесты с проверкой покрытия (локально, без Docker)
+test-cov:
+	python -m pytest tests/ -v --tb=short \
+		--cov=core --cov=adapters \
+		--cov-report=term-missing \
+		--cov-fail-under=70
+
 # Линтеры
 lint:
 	ruff check core/ adapters/ tests/

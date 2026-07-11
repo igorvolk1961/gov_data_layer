@@ -18,6 +18,7 @@ Usage:
 """
 
 from core.observability.config import ObservabilityConfig
+from core.observability.configure import configure
 from core.observability.logger import get_logger
 from core.observability.tracer import (
     FileFallbackTracer,
@@ -33,24 +34,9 @@ __all__ = [
     "LangFuseTracer",
     "ObservabilityConfig",
     "Tracer",
+    "configure",
     "create_tracer",
     "get_logger",
     "get_tracer",
     "set_tracer",
 ]
-
-
-def configure(config: ObservabilityConfig | None = None) -> Tracer:
-    """Configure the observability layer on application startup.
-
-    Args:
-        config: Configuration. If None, reads from environment variables.
-
-    Returns:
-        Tracer: ready-to-use implementation (LangFuseTracer or FileFallbackTracer).
-    """
-    if config is None:
-        config = ObservabilityConfig.from_env()
-    tracer = create_tracer(config)
-    set_tracer(tracer)
-    return tracer

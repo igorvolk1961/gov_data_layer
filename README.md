@@ -2,6 +2,11 @@
 
 Слой официальных данных для AI-агентов — предоставляет доступ к нормативно-правовым актам и официальным данным с полной трассируемостью источников.
 
+[![CI](https://github.com/igorvolk1961/gov_data_layer/actions/workflows/ci.yml/badge.svg)](https://github.com/igorvolk1961/gov_data_layer/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/igorvolk1961/gov_data_layer/branch/main/graph/badge.svg)](https://codecov.io/gh/igorvolk1961/gov_data_layer)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://www.python.org/downloads/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 ## Документация
 
 | Документ | Описание |

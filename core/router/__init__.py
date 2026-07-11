@@ -1,6 +1,6 @@
 """Router — stub for Phase 5."""
 
-from __future__ import annotations
+from __future__ import annotations  # pragma: no cover
 
 # TODO: Phase 5 — implement router logic:
 #   - Select source adapter based on context (region, topic)
