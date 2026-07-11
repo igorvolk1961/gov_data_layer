@@ -12,7 +12,7 @@ on:
       - ".env.example"
       - ".pre-commit-config.yaml"
       - ".secrets.baseline"
-      - ".kilocode"
+      - ".kilorules"
   pull_request:
     branches: [main]
     paths-ignore:
@@ -24,7 +24,7 @@ on:
       - ".env.example"
       - ".pre-commit-config.yaml"
       - ".secrets.baseline"
-      - ".kilocode"
+      - ".kilorules"
 
 # Cancel in-progress runs for the same branch (PR or push)
 concurrency:
