@@ -6,6 +6,8 @@
 [![codecov](https://codecov.io/gh/igorvolk1961/gov_data_layer/branch/main/graph/badge.svg)](https://codecov.io/gh/igorvolk1961/gov_data_layer)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://www.python.org/downloads/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+## Исходная постановка задачи
+[`task/postanovka_gov_data_layer.md`](task/postanovka_gov_data_layer.md)
 
 ## Документация
 
@@ -17,7 +19,6 @@
 | [`plans/container.md`](plans/container.md) | C4 Container — внутренняя структура: MCP + REST + ODLService |
 | [`plans/adr.md`](plans/adr.md) | Архитектурные решения (ADRs) |
 | [`plans/data-structures-design.md`](plans/data-structures-design.md) | Дизайн структур данных и канонической модели |
-| [`task/postanovka_gov_data_layer.md`](task/postanovka_gov_data_layer.md) | Исходная постановка задачи |
 | [`examples/SKILL.md`](examples/SKILL.md) | Пример Agent Skill — инструкция для AI-агента |
 
 ## Быстрый старт
