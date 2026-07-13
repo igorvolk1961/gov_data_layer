@@ -1,12 +1,10 @@
-"""StubSearchHandler — stub search with fixed documents."""
+"""StubSearchHandler — stub search over cached documents."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 from adapters.pravo.adapter.handlers import BaseSearchHandler
-from adapters.pravo.adapter.stub._data import _build_stub_documents
 from core.models.models import (
     ConfidenceSignals,
     SearchContext,
@@ -14,24 +12,16 @@ from core.models.models import (
     SourceAvailability,
 )
 
-if TYPE_CHECKING:
-    from adapters.pravo.adapter.base import PravoAdapterBase
-
 
 class StubSearchHandler(BaseSearchHandler):
-    """Search over fixed stub documents."""
-
-    def __init__(self, adapter: PravoAdapterBase) -> None:
-        """Initialize with stub documents."""
-        super().__init__(adapter)
-        self._stub_documents = _build_stub_documents()
+    """Search over cached documents (populated by real HTTP calls)."""
 
     async def search(
         self,
         query: str,
         context: SearchContext | None = None,
     ) -> list[SearchResult]:
-        """Search over fixed stub documents.
+        """Search over cached documents.
 
         Args:
             query: Search query (case-insensitive substring match).
@@ -51,7 +41,7 @@ class StubSearchHandler(BaseSearchHandler):
             now = datetime.now(timezone.utc)
             results: list[SearchResult] = []
 
-            for doc in self._stub_documents.values():
+            for doc, _ in adapter._document_cache.values():
                 # Filter by query
                 if query:
                     query_lower = query.lower()

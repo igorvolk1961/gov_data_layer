@@ -1,31 +1,20 @@
-"""StubListTopicsHandler — stub topic listing from fixed data."""
+"""StubListTopicsHandler — stub topic listing from cached documents."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from adapters.pravo.adapter.handlers import BaseListTopicsHandler
-from adapters.pravo.adapter.stub._data import _build_stub_documents
 from core.models.models import TopicNode
-
-if TYPE_CHECKING:
-    from adapters.pravo.adapter.base import PravoAdapterBase
 
 
 class StubListTopicsHandler(BaseListTopicsHandler):
-    """List topics derived from fixed stub documents."""
-
-    def __init__(self, adapter: PravoAdapterBase) -> None:
-        """Initialize with stub documents."""
-        super().__init__(adapter)
-        self._stub_documents = _build_stub_documents()
+    """List topics derived from cached documents (populated by real HTTP calls)."""
 
     async def list_topics(
         self,
         parent_id: str | None = None,
         query: str = "",
     ) -> list[TopicNode]:
-        """Return unique topics from stub documents.
+        """Return unique topics from cached documents.
 
         Args:
             parent_id: Optional parent topic filter (unused in stub).
@@ -43,7 +32,7 @@ class StubListTopicsHandler(BaseListTopicsHandler):
             span.set_input({"parent_id": parent_id, "query": query})
             seen: set[str] = set()
             topics: list[TopicNode] = []
-            for doc in self._stub_documents.values():
+            for doc, _ in adapter._document_cache.values():
                 for t in doc.topic:
                     if t not in seen:
                         seen.add(t)

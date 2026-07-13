@@ -1,4 +1,4 @@
-"""Integration tests configuration — loads .env and configures Tesseract path."""
+"""Integration tests configuration — loads .env, configures Tesseract path, and initializes observability."""
 
 from __future__ import annotations
 
@@ -10,6 +10,11 @@ from dotenv import load_dotenv
 
 # Загружаем .env из корня проекта, чтобы pytest видел OCR_YA_* переменные
 load_dotenv(Path(__file__).parents[2] / ".env")
+
+# Инициализируем трейсер (FileFallbackTracer) для тестов, которые используют tracer
+from core.observability import configure  # noqa: E402
+
+configure()
 
 # Путь к Tesseract: из переменной окружения TESSERACT_CMD или стандартный для платформы
 _tesseract_path = os.environ.get("TESSERACT_CMD")
