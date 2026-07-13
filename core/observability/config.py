@@ -1,6 +1,7 @@
 """Observability configuration.
 
-Reads environment variables and provides ObservabilityConfig dataclass.
+Reads from AppConfig (config.yaml + .env) and provides ObservabilityConfig dataclass.
+Legacy from_env() is kept for backward compatibility but delegates to AppConfig.
 """
 
 from __future__ import annotations
@@ -55,24 +56,45 @@ class ObservabilityConfig:
 
     @classmethod
     def from_env(cls) -> ObservabilityConfig:
-        """Create config from environment variables.
+        """Create config from AppConfig (config.yaml + .env).
 
-        Variables:
-            LANGFUSE_HOST
-            LANGFUSE_PUBLIC_KEY
-            LANGFUSE_SECRET_KEY
-            LOG_LEVEL
-            LOG_CLEAR_ON_START (true/false)
-            LOG_FILE
+        If legacy env vars (LANGFUSE_HOST, LOG_LEVEL, etc.) are set, uses them directly.
+        Otherwise, delegates to the global AppConfig singleton loaded from config.yaml.
         """
-        return cls(
-            langfuse_host=os.getenv("LANGFUSE_HOST", "http://localhost:3000"),
-            langfuse_public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-            langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-            log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
-            log_clear_on_start=os.getenv("LOG_CLEAR_ON_START", "false").lower() == "true",
-            log_file=os.getenv("LOG_FILE", "data/traces.log"),
+        # Check if legacy env vars are set
+        has_legacy = any(
+            os.getenv(k) is not None
+            for k in ("LANGFUSE_HOST", "LOG_LEVEL", "LOG_CLEAR_ON_START", "LOG_FILE")
         )
+        if has_legacy:
+            return cls(
+                langfuse_host=os.getenv("LANGFUSE_HOST", "http://localhost:3000"),
+                langfuse_public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+                langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+                log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+                log_clear_on_start=os.getenv("LOG_CLEAR_ON_START", "false").lower() == "true",
+                log_file=os.getenv("LOG_FILE", "data/traces.log"),
+            )
+
+        # Use AppConfig (config.yaml + .env)
+        try:
+            # Lazy import to avoid circular dependency:
+            # core.observability.config -> core.api.app_config -> core.api.rest_server -> core.observability
+            from core.api.app_config import get_config
+
+            app_cfg = get_config()
+            obs = app_cfg.observability
+            return cls(
+                langfuse_host=obs.langfuse_host,
+                langfuse_public_key=obs.langfuse_public_key,
+                langfuse_secret_key=obs.langfuse_secret_key,
+                log_level=obs.log_level,
+                log_clear_on_start=obs.log_clear_on_start,
+                log_file=obs.log_file,
+            )
+        except Exception:
+            # Ultimate fallback: hardcoded defaults
+            return cls()
 
     @property
     def langfuse_enabled(self) -> bool:

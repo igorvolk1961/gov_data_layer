@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from core.api.app_config import get_config
 from core.errors import OCRQualityError, OCRUnavailableError
 from core.observability.logger import get_logger
 
@@ -43,6 +44,18 @@ class TesseractOCR:
     ) -> None:
         self._lang = lang
         self._timeout = timeout
+
+    @classmethod
+    def from_config(cls) -> TesseractOCR:
+        """Create TesseractOCR from global AppConfig.
+
+        Reads lang and timeout from config.yaml (ocr.tesseract).
+        """
+        cfg = get_config()
+        return cls(
+            lang=cfg.ocr.tesseract_lang,
+            timeout=cfg.ocr.tesseract_timeout,
+        )
 
     async def extract_text(self, pdf_bytes: bytes, document_id: str) -> str:
         """Extract text from PDF bytes using Tesseract OCR.

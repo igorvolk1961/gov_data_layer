@@ -75,6 +75,15 @@ def main() -> None:
 
     logger = get_logger("odl.main")
 
+    # Load AppConfig (config.yaml + .env) — triggers lazy load of get_config()
+    try:
+        from core.api.app_config import AppConfig
+
+        AppConfig.load()  # validate config on startup
+    except Exception as e:
+        logger.critical("Configuration error: %s", e)
+        sys.exit(1)
+
     try:
         config = ServerConfig.from_env()
     except ConfigError as e:

@@ -11,13 +11,13 @@ from dotenv import load_dotenv
 # Загружаем .env из корня проекта, чтобы pytest видел OCR_YA_* переменные
 load_dotenv(Path(__file__).parents[2] / ".env")
 
-# Указываем путь к Tesseract, если он не в PATH
-# Windows: D:\Program Files\Tesseract-OCR\tesseract.exe
-# Linux (CI): /usr/bin/tesseract (ставится через apt-get)
-if sys.platform == "win32":
-    _tesseract_path = r"D:\Program Files\Tesseract-OCR\tesseract.exe"
-else:
-    _tesseract_path = "/usr/bin/tesseract"
+# Путь к Tesseract: из переменной окружения TESSERACT_CMD или стандартный для платформы
+_tesseract_path = os.environ.get("TESSERACT_CMD")
+if not _tesseract_path:
+    if sys.platform == "win32":
+        _tesseract_path = r"D:\Program Files\Tesseract-OCR\tesseract.exe"
+    else:
+        _tesseract_path = "/usr/bin/tesseract"
 
 if os.path.exists(_tesseract_path):
     import pytesseract

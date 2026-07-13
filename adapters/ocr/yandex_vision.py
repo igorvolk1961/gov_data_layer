@@ -6,9 +6,10 @@
 Документация API:
 https://yandex.cloud/ru/docs/ocr/api-ref/OCR/recognizeText
 
-Конфигурация (через .env):
-- OCR_YA_KEY_SECRET — секретный ключ сервисного аккаунта или API-ключ
-- OCR_YA_FOLDER_ID — ID каталога в Yandex Cloud
+Конфигурация:
+- ya_key_secret — секретный ключ сервисного аккаунта или API-ключ (из .env)
+- ya_folder_id — ID каталога в Yandex Cloud (из config.yaml или .env)
+- timeout — таймаут запроса (из config.yaml)
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import Any
 import fitz  # PyMuPDF
 import httpx
 
+from core.api.app_config import get_config
 from core.errors import OCRUnavailableError
 from core.observability.logger import get_logger
 
@@ -65,6 +67,25 @@ class YandexVisionOCR:
         self._iam_token: str | None = None
         # If secret starts with AQVN - it's an API key, use directly
         self._is_api_key = ya_key_secret.strip().startswith("AQVN") if ya_key_secret else False
+
+    @classmethod
+    def from_config(cls) -> YandexVisionOCR:
+        """Create YandexVisionOCR from global AppConfig.
+
+        Reads ya_key_secret from .env (OCR_YA_KEY_SECRET),
+        ya_folder_id and timeout from config.yaml (ocr.yandex_vision).
+        """
+        cfg = get_config()
+        ya_key_secret = cfg.ocr.ya_folder_id  # placeholder, real secret from .env
+        # Actually read secret from env directly (it's not in AppConfig for security)
+        import os
+
+        ya_key_secret = os.environ.get("OCR_YA_KEY_SECRET", "")
+        return cls(
+            ya_key_secret=ya_key_secret,
+            ya_folder_id=cfg.ocr.ya_folder_id,
+            timeout=cfg.ocr.yandex_vision_timeout,
+        )
 
     async def _get_authorization_header(self) -> str:
         """Получить значение заголовка Authorization.

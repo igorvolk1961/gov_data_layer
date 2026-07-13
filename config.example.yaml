@@ -1,0 +1,47 @@
+# === Official Data Layer — Configuration ===
+# Copy this file to config.yaml and adjust values.
+# Secrets (API keys, passwords) go into .env, NOT here.
+
+# === Server ===
+server:
+  api_host: "0.0.0.0"
+  api_port: 8000
+  mcp_host: "0.0.0.0"
+  mcp_port: 8001
+
+# === Source Adapters ===
+# Comma-separated list of "module:ClassName" pairs.
+adapters:
+  - "adapters.stub:StubAdapter"
+  # - "adapters.pravo:PravoAdapter"
+
+# === OCR ===
+ocr:
+  provider: "stub"              # yandex_vision | tesseract | stub
+  tesseract:
+    lang: "rus"                 # Tesseract language (default: rus)
+    timeout: 30                 # Tesseract timeout per page (seconds)
+  yandex_vision:
+    timeout: 120                # Yandex OCR API timeout (seconds)
+    folder_id: ""               # Yandex Cloud folder ID (can also be set via OCR_YA_FOLDER_ID in .env)
+
+# === Vector Search (Qdrant) ===
+qdrant:
+  host: "localhost"
+  port: 6333
+
+# === Cache (Redis) ===
+redis:
+  host: "localhost"
+  port: 6379
+
+# === Database ===
+database:
+  url: "sqlite:///data/official_data.db"
+
+# === Observability ===
+observability:
+  langfuse_host: "http://localhost:3000"
+  log_level: "INFO"
+  log_clear_on_start: false
+  log_file: "data/traces.log"

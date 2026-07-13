@@ -1,7 +1,7 @@
 """Server configuration.
 
-Reads environment variables (already loaded by main.py via dotenv)
-and provides ServerConfig dataclass.
+Reads from AppConfig (config.yaml + .env) and provides ServerConfig dataclass.
+Legacy from_env() is kept for backward compatibility but delegates to AppConfig.
 """
 
 from __future__ import annotations
@@ -98,27 +98,41 @@ class ServerConfig:
 
     @classmethod
     def from_env(cls) -> ServerConfig:
-        """Create config from environment variables.
+        """Create config from AppConfig (config.yaml + .env).
 
-        Expects .env to have been loaded by main.py before this is called.
-
-        Variables:
-            API_HOST (default: 0.0.0.0)
-            API_PORT (default: 8000)
-            MCP_HOST (default: 0.0.0.0)
-            MCP_PORT (default: 8001)
-            ADAPTERS (default: adapters.stub:StubAdapter)
-                Comma-separated list of "module:ClassName" pairs.
-                Example: "adapters.stub:StubAdapter,adapters.pravo:PravoAdapter"
+        If legacy env vars (API_HOST, API_PORT, etc.) are set, uses them directly.
+        Otherwise, delegates to the global AppConfig singleton loaded from config.yaml.
         """
-
-        return cls(
-            api_host=os.getenv("API_HOST", "0.0.0.0"),
-            api_port=parse_port("API_PORT", "8000"),
-            mcp_host=os.getenv("MCP_HOST", "0.0.0.0"),
-            mcp_port=parse_port("MCP_PORT", "8001"),
-            adapters=parse_adapters(os.getenv("ADAPTERS")),
+        # Check if legacy env vars are set
+        has_legacy = any(
+            os.getenv(k) is not None
+            for k in ("API_HOST", "API_PORT", "MCP_HOST", "MCP_PORT", "ADAPTERS")
         )
+        if has_legacy:
+            return cls(
+                api_host=os.getenv("API_HOST", "0.0.0.0"),
+                api_port=parse_port("API_PORT", "8000"),
+                mcp_host=os.getenv("MCP_HOST", "0.0.0.0"),
+                mcp_port=parse_port("MCP_PORT", "8001"),
+                adapters=parse_adapters(os.getenv("ADAPTERS")),
+            )
+
+        # Use AppConfig (config.yaml + .env)
+        try:
+            # Lazy import to avoid circular dependency
+            from core.api.app_config import get_config
+
+            app_cfg = get_config()
+            return cls(
+                api_host=app_cfg.server.api_host,
+                api_port=app_cfg.server.api_port,
+                mcp_host=app_cfg.server.mcp_host,
+                mcp_port=app_cfg.server.mcp_port,
+                adapters=app_cfg.server.adapters,
+            )
+        except Exception:
+            # Ultimate fallback: hardcoded defaults
+            return cls()
 
 
 __all__ = [
