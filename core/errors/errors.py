@@ -45,3 +45,17 @@ class InternalError(ODLBaseError):
 
     def __init__(self, message: str = "Internal error") -> None:
         super().__init__(message, code="INTERNAL_ERROR")
+
+
+class OCRUnavailableError(ODLBaseError):
+    """OCR-сервис недоступен."""
+
+    def __init__(self, message: str = "OCR service is unavailable") -> None:
+        super().__init__(message, code="OCR_UNAVAILABLE")
+
+
+class OCRQualityError(ODLBaseError):
+    """Качество распознавания OCR ниже допустимого порога."""
+
+    def __init__(self, message: str = "OCR quality is below acceptable threshold") -> None:
+        super().__init__(message, code="OCR_QUALITY")

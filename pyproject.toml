@@ -22,17 +22,11 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
     "exceptiongroup>=1.1.0; python_version < '3.11'",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=7.1.0",
-    "ruff>=0.1.0",
-    "mypy>=1.5.0",
-    "detect-secrets>=1.4.0",
-    "langfuse>=2.0.0",
+    "httpx2>=2.5.0",
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.16.0",
+    "Pillow>=10.0.0",
+    "PyMuPDF>=1.23.0",
 ]
 
 [project.scripts]
@@ -121,5 +115,12 @@ markers = [
 
 [dependency-groups]
 dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
     "pytest-cov>=7.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "detect-secrets>=1.4.0",
+    "langfuse>=2.0.0",
+    "pre-commit>=4.6.0",
 ]
