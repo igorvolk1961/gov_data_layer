@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from core.cache import CacheClient
 from core.errors import NotFoundError
 from core.models.models import (
     Citation,
@@ -42,9 +43,11 @@ class ODLService(ODLServiceProtocol):
         self,
         adapters: Sequence[SourceAdapter],
         tracer: Tracer | None = None,
+        cache: CacheClient | None = None,
     ) -> None:
         self._adapters = list(adapters)
         self._tracer: Tracer | None = tracer
+        self._cache: CacheClient | None = cache
 
     @property
     def tracer(self) -> Tracer:

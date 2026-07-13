@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
+from core.cache import CacheClient
 from core.errors import InvalidInputError, NotFoundError, SourceUnavailableError
 from core.models.models import SearchContext
 from core.observability import get_tracer
@@ -80,11 +81,15 @@ def _add_tracing_middleware(app: FastAPI) -> None:
                 raise
 
 
-def create_app(service: ODLServiceProtocol) -> FastAPI:
+def create_app(
+    service: ODLServiceProtocol,
+    cache: CacheClient | None = None,
+) -> FastAPI:
     """Создать FastAPI-приложение с внедрённым ODLService.
 
     Args:
         service: Реализация ODLServiceProtocol (заглушка или настоящий сервис).
+        cache: Опциональный CacheClient для отчёта о состоянии Redis.
 
     Returns:
         Настроенное FastAPI-приложение.
@@ -108,7 +113,8 @@ def create_app(service: ODLServiceProtocol) -> FastAPI:
     @app.get("/health")
     async def health() -> JSONResponse:
         """Проверка работоспособности сервиса."""
-        return JSONResponse(content={"status": "ok"})
+        redis_status = "connected" if (cache and cache.available) else "unavailable"
+        return JSONResponse(content={"status": "ok", "redis": redis_status})
 
     # ------------------------------------------------------------------
     # Search

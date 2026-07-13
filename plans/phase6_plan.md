@@ -177,59 +177,17 @@ OCR_TESSERACT_LANG=rus
 
 **Файлы:**
 - `adapters/pravo/__init__.py` — экспорты
-- `adapters/pravo/pravo_adapter.py` — `PravoAdapter`
+- `adapters/pravo/pravo_adapter.py` — `PravoAdapter` (фасад)
 - `adapters/pravo/pravo_client.py` — HTTP-клиент к API pravo.gov.ru
 - `adapters/pravo/pravo_parser.py` — парсер ответов API в каноническую модель
 
-**PravoClient:**
-- HTTP-клиент (httpx) к `http://publication.pravo.gov.ru`
-- Методы:
-  - `get_public_blocks(parent=None)` — `/api/PublicBlocks`
-  - `get_categories(block)` — `/api/Categories`
-  - `get_signatory_authorities(block, category)` — `/api/SignatoryAuthorities`
-  - `get_document_types(block, category, authority_id)` — `/api/DocumentTypes`
-  - `search_documents(params)` — `/api/Documents` (поиск с фильтрами)
-  - `get_document(eo_number)` — `/api/Document` (детали документа)
-  - `download_pdf(eo_number)` — скачивание PDF
-- Retry (3 попытки), таймауты (30s), rate limiting
-- Обработка ошибок: `SourceUnavailableError`
+**PravoClient:** HTTP-клиент (httpx) к `http://publication.pravo.gov.ru` с методами для всех API-эндпоинтов (PublicBlocks, Categories, SignatoryAuthorities, DocumentTypes, Documents, Document, PDF download). Retry (3 попытки), таймауты (30s), rate limiting.
 
-**PravoParser:**
-- Парсинг JSON-ответов API в `OfficialDocument`
-- Маппинг полей:
-  - `id` → `eoNumber` (номер электронного опубликования)
-  - `title` → `title` (заголовок)
-  - `complexName` → `summary` (составное название)
-  - `publishDateShort` → `ingest_date`
-  - `documentDate` → `valid_from` (дата подписания)
-  - `signatoryAuthorityId` → lookup организации
-  - `documentTypeId` → lookup вида документа
-- Нормализация: извлечение номера, даты, органа из `complexName`
+**PravoParser:** Парсинг JSON-ответов API в `OfficialDocument`. Маппинг полей API → каноническая модель (см. таблицу ниже).
 
-**PravoAdapter:**
-- Реализует `SourceAdapter` Protocol
-- `source_id` = `"pravo"`
-- `search()` — поиск через `/api/Documents` + нормализация
-- `get()` — получение документа через `/api/Document` + нормализация
-- `normalize()` — парсинг сырых данных в `OfficialDocument`
-- `ingest()` — загрузка новых документов (см. День 2)
-- `list_topics()` — через `/api/PublicBlocks` (иерархия блоков публикации)
-- `get_toc()` — заглушка (TOC из PDF не извлекается на этом этапе)
-- `get_content()` — скачивание PDF → OCR → текст
+**PravoAdapter:** Реализует `SourceAdapter` Protocol. `source_id` = `"pravo"`. Подробная архитектура (Strategy Pattern с handlers/, production/, stub/) описана в [`plans/pravo_adapter_decomposition.md`](plans/pravo_adapter_decomposition.md).
 
-**Stub/Production режим:**
-- `PravoAdapter.__init__(mode="stub" | "production")`
-- В `stub` режиме: `initial_ingest()` загружает 3 фиксированных документа, `ingest_new()` возвращает 2 фиксированных URL
-- В `production` режиме: реальный мониторинг RSS/API
-
-**Фиксированные документы для stub (из prompt_phase6.md):**
-1. Приказ Минтруда от 29.09.2020 № 668н — `0001202012230060`
-2. Приказ Минтруда от 21.03.2022 № 154н — `0001202206200030`
-3. Постановление Правительства РФ от 16.12.2022 № 2330 — `0001202212190143`
-
-**Фиксированные URL для `ingest_new()` (stub):**
-1. Приказ Минтруда от 03.06.2026 № 238н — `0001202607060006`
-2. Приказ Минтруда от 08.05.2026 № 200н — `0001202606090026`
+**Stub/Production режим:** `PravoAdapter.__init__(mode="stub" | "production")`. Режим задаётся через `PRAVO_MODE` env var (по умолчанию `production`). В stub режиме — 3 фиксированных документа Минтруда, в production — реальный API.
 
 #### 1.4. Каноническая модель: доработка OfficialDocument
 

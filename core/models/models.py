@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field, field_serializer
 
@@ -103,7 +104,7 @@ class OfficialDocument(BaseModel):
     # Pydantic v2 uses ISO format by default for datetime serialization,
     # which matches the previous json_encoders override. Explicit serializer
     # ensures consistent behavior for model_dump_json() and json.dumps().
-    @field_serializer("ingest_date", "valid_from", "valid_to")
+    @field_serializer("ingest_date", "valid_from", "valid_to", "publish_date")
     @classmethod
     def serialize_datetime(cls, v: datetime | None) -> str | None:
         return v.isoformat() if v else None
@@ -146,6 +147,34 @@ class OfficialDocument(BaseModel):
     legal_status: LegalStatus = Field(
         default=LegalStatus.UNKNOWN,
         description="Юридический статус на момент инжеста",
+    )
+
+    # Новые общие поля (из API pravo.gov.ru)
+    document_number: str | None = Field(
+        default=None,
+        description="Номер документа (НПА). Пример: '668н', '154н', '2330'",
+    )
+    document_type: str | None = Field(
+        default=None,
+        description="Вид документа. Пример: 'Приказ', 'Постановление', 'Федеральный закон'",
+    )
+    publish_id: str | None = Field(
+        default=None,
+        description="Номер электронного опубликования (eoNumber). Пример: '0001202012230060'",
+    )
+    publish_date: datetime | None = Field(
+        default=None,
+        description="Дата публикации документа (из publishDateShort API pravo.gov.ru). "
+        "Отличается от ingest_date — это дата первой официальной публикации.",
+    )
+
+    # Source-специфичные атрибуты (не маппятся в канонические поля)
+    meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Source-специфичные атрибуты документа, "
+        "не маппящиеся в канонические поля. "
+        "Пример для pravo.gov.ru: pdf_url, pdf_pages, jd_reg_number, jd_reg_date. "
+        "Позволяет расширять модель без изменения схемы.",
     )
 
 
@@ -240,6 +269,18 @@ class SearchResult(BaseModel):
     legal_status: LegalStatus = Field(description="Юридический статус")
     confidence: ConfidenceSignals = Field(description="Сигналы уверенности для данного результата")
 
+    # Поля для фильтрации без N+1 (из OfficialDocument)
+    document_number: str | None = Field(
+        default=None,
+        description="Номер документа (НПА). Пример: '668н', '154н', '2330'. "
+        "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
+    )
+    document_type: str | None = Field(
+        default=None,
+        description="Вид документа. Пример: 'Приказ', 'Постановление', 'Федеральный закон'. "
+        "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
+    )
+
 
 class SearchResponse(BaseModel):
     """Ответ на поисковый запрос — результаты с мета-информацией для пагинации.
@@ -301,6 +342,16 @@ class DocumentDetail(BaseModel):
         description="Дата окончания юридической силы (null = бессрочно)",
     )
     legal_status: LegalStatus = Field(description="Юридический статус")
+
+    # Поля из OfficialDocument (для агентской фильтрации без N+1)
+    document_number: str | None = Field(
+        default=None,
+        description="Номер документа (НПА). Пример: '668н', '154н', '2330'.",
+    )
+    document_type: str | None = Field(
+        default=None,
+        description="Вид документа. Пример: 'Приказ', 'Постановление', 'Федеральный закон'.",
+    )
 
     # Содержимое (то, ради чего агент вызывает get_document_detail)
     citations: list[Citation] = Field(

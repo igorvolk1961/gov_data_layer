@@ -16,9 +16,11 @@ import uvicorn
 from dotenv import load_dotenv
 
 from adapters.base.source_adapter import SourceAdapter
+from core.api.app_config import get_config
 from core.api.config import ConfigError, ServerConfig, instantiate_adapter
 from core.api.mcp_server import create_mcp_server
 from core.api.rest_server import create_app
+from core.cache import CacheClient
 from core.observability import configure as configure_observability
 from core.observability import get_logger, get_tracer
 from core.observability.logger import VALID_LOG_LEVELS, get_effective_level_name, reconfigure
@@ -107,10 +109,20 @@ def main() -> None:
         "Loaded adapters: %s",
         [a.source_id for a in adapters],
     )
-    service = ODLService(adapters=adapters)
 
-    # Create FastAPI app (REST)
-    app = create_app(service)
+    # Create cache client (lazy — no connection attempt until first use)
+    app_config = get_config()
+    cache = CacheClient(host=app_config.redis_host, port=app_config.redis_port)
+    logger.info(
+        "Cache client created (Redis at %s:%s — lazy connect)",
+        app_config.redis_host,
+        app_config.redis_port,
+    )
+
+    service = ODLService(adapters=adapters, cache=cache)
+
+    # Create FastAPI app (REST) with cache for health check
+    app = create_app(service, cache=cache)
 
     # Create MCP server and mount as SSE app under /mcp
     mcp_server = create_mcp_server(service)
