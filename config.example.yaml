@@ -38,9 +38,9 @@ redis:
   host: "localhost"
   port: 6379
 
-# === Database ===
+# === Database (PostgreSQL) ===
 database:
-  url: "sqlite:///data/official_data.db"
+  url: "postgresql://odl:odl@localhost:5432/odl_metadata"
 
 # === Observability ===
 observability:

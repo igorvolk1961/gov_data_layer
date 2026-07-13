@@ -90,6 +90,22 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # Liquibase — управление миграциями БД
+  liquibase:
+    image: liquibase/liquibase:4.28
+    container_name: odl-liquibase
+    command: >
+      --url=jdbc:postgresql://metadata-db:5432/odl_metadata
+      --username=odl
+      --password=odl
+      --changeLogFile=/liquibase/changelog/changelog-root.xml
+      update
+    volumes:
+      - ./core/persistence/migrations:/liquibase/changelog
+    depends_on:
+      metadata-db:
+        condition: service_healthy
+
   # Основное приложение (слой официальных данных)
   app:
     build:

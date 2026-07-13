@@ -25,10 +25,19 @@ from core.observability import configure as configure_observability
 from core.observability import get_logger, get_tracer
 from core.observability.logger import VALID_LOG_LEVELS, get_effective_level_name, reconfigure
 from core.odl_service import ODLService
+from core.persistence import DatabaseClient
 
 
-async def _run_server(rest_server: uvicorn.Server) -> None:
-    """Run the uvicorn server with graceful shutdown support."""
+async def _run_server(
+    rest_server: uvicorn.Server,
+    db: DatabaseClient | None = None,
+) -> None:
+    """Run the uvicorn server with graceful shutdown support.
+
+    Args:
+        rest_server: The uvicorn server instance to run.
+        db: Optional DatabaseClient to close on shutdown.
+    """
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
@@ -53,6 +62,9 @@ async def _run_server(rest_server: uvicorn.Server) -> None:
         rest_server.should_exit = True
         await server_task
     finally:
+        # Gracefully close the database connection pool
+        if db is not None and db.available:
+            await db.close()
         tracer = get_tracer()
         if tracer is not None:
             with tracer.trace("server.shutdown") as span:
@@ -119,7 +131,15 @@ def main() -> None:
         app_config.redis_port,
     )
 
-    service = ODLService(adapters=adapters, cache=cache)
+    # Create database client (lazy — no connection attempt until first use)
+    db: DatabaseClient | None = None
+    if app_config.database_url:
+        db = DatabaseClient(dsn=app_config.database_url)
+        logger.info(
+            "Database client created (PostgreSQL — lazy connect)",
+        )
+
+    service = ODLService(adapters=adapters, cache=cache, db=db)
 
     # Create FastAPI app (REST) with cache for health check
     app = create_app(service, cache=cache)
@@ -150,7 +170,7 @@ def main() -> None:
     )
     rest_server = uvicorn.Server(rest_config)
 
-    asyncio.run(_run_server(rest_server))
+    asyncio.run(_run_server(rest_server, db=db))
 
 
 if __name__ == "__main__":

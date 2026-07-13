@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.28.xsd">
+
+    <changeSet id="v001-000" author="kilo-code">
+        <comment>Create data_source table — must be first, all other tables reference it</comment>
+        <sqlFile path="000_create_data_source.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            DROP TABLE IF EXISTS data_source CASCADE;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v001-001" author="kilo-code">
+        <comment>Create reference tables: document_type, organization, jurisdiction, region, topic</comment>
+        <sqlFile path="001_create_reference_tables.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            DROP TABLE IF EXISTS topic CASCADE;
+            DROP TABLE IF EXISTS region CASCADE;
+            DROP TABLE IF EXISTS jurisdiction CASCADE;
+            DROP TABLE IF EXISTS organization CASCADE;
+            DROP TABLE IF EXISTS document_type CASCADE;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v001-002" author="kilo-code">
+        <comment>Create document and document_section tables</comment>
+        <sqlFile path="002_create_document_tables.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            DROP TABLE IF EXISTS document_section CASCADE;
+            DROP TABLE IF EXISTS document CASCADE;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v001-003" author="kilo-code">
+        <comment>Create M:N junction tables: document_organization, document_topic</comment>
+        <sqlFile path="003_create_document_relations.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            DROP TABLE IF EXISTS document_topic CASCADE;
+            DROP TABLE IF EXISTS document_organization CASCADE;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v001-004" author="kilo-code">
+        <comment>Create change tracking tables: document_section_modification, document_revocation</comment>
+        <sqlFile path="004_create_change_tracking.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            DROP TABLE IF EXISTS document_revocation CASCADE;
+            DROP TABLE IF EXISTS document_section_modification CASCADE;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v001-005" author="kilo-code">
+        <comment>Create rubric table (hierarchical, universal — not tied to any data source)</comment>
+        <sqlFile path="005_create_rubric_table.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            DROP TABLE IF EXISTS rubric CASCADE;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v001-006" author="kilo-code">
+        <comment>Create document_rubric M:N junction table linking documents to rubrics</comment>
+        <sqlFile path="006_create_document_rubric.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            DROP TABLE IF EXISTS document_rubric CASCADE;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
