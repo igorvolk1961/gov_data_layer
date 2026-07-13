@@ -50,7 +50,10 @@ from core.models.models import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from adapters.ocr.ocr_provider import OCRProvider
+    from adapters.pravo.pravo_client import PravoClient
+    from adapters.pravo.pravo_parser import PravoParser
+    from core.observability.tracer import Tracer
 
 
 class PravoAdapter(PravoAdapterBase):
@@ -71,10 +74,10 @@ class PravoAdapter(PravoAdapterBase):
         self,
         mode: str | None = None,
         *,
-        client=None,
-        parser=None,
-        ocr_provider=None,
-        tracer=None,
+        client: PravoClient | None = None,
+        parser: PravoParser | None = None,
+        ocr_provider: OCRProvider | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         """Initialize PravoAdapter and build handlers for the given mode.
 

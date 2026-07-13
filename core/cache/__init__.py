@@ -53,7 +53,7 @@ class CacheClient:
         self._host = host
         self._port = port
         self._default_ttl = default_ttl
-        self._redis: aioredis.Redis | None = _UNSET  # type: ignore[assignment]
+        self._redis: aioredis.Redis | None = _UNSET
         self._available = False
 
     @property

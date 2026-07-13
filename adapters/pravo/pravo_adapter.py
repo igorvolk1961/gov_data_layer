@@ -10,10 +10,6 @@ from adapters.pravo.adapter.constants import (  # noqa: F401
     _INGEST_PAGE_SIZE,
     _SOURCE_URL,
     _STALE_CACHE_TTL,
-    _STUB_DOCUMENTS,
-    _STUB_PUBLISH_IDS_INITIAL,
-    _STUB_PUBLISH_IDS_NEW,
-    _build_stub_documents,
 )
 
 __all__ = [

@@ -236,7 +236,7 @@ class PravoAdapterBase(RSSAdapter):
             logger.info(
                 "Populated parser caches: %d authorities, %d doc types",
                 len(authorities),
-                len(self._parser._doc_type_cache),  # type: ignore[attr-defined]
+                len(self._parser._doc_type_cache),
             )
         except SourceUnavailableError:
             logger.warning("Failed to populate parser caches — API unavailable")

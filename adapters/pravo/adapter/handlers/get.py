@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from core.models.models import OfficialDocument
+
+if TYPE_CHECKING:
+    from adapters.pravo.adapter.base import PravoAdapterBase
 
 
 class BaseGetHandler(ABC):
@@ -13,7 +17,7 @@ class BaseGetHandler(ABC):
     Subclasses must implement get().
     """
 
-    def __init__(self, adapter: object) -> None:
+    def __init__(self, adapter: PravoAdapterBase) -> None:
         """Initialize with a reference to the parent PravoAdapter.
 
         Args:

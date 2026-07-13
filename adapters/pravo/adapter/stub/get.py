@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from adapters.pravo.adapter.handlers import BaseGetHandler
 from adapters.pravo.adapter.stub._data import _build_stub_documents
 from core.errors import NotFoundError
 from core.models.models import OfficialDocument
 
+if TYPE_CHECKING:
+    from adapters.pravo.adapter.base import PravoAdapterBase
+
 
 class StubGetHandler(BaseGetHandler):
     """Retrieve a single document from fixed stub data."""
 
-    def __init__(self, adapter: object) -> None:
+    def __init__(self, adapter: PravoAdapterBase) -> None:
         """Initialize with stub documents."""
         super().__init__(adapter)
         self._stub_documents = _build_stub_documents()

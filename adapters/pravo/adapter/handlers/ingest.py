@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from adapters.pravo.adapter.base import PravoAdapterBase
 
 
 class BaseIngestHandler(ABC):
@@ -11,7 +15,7 @@ class BaseIngestHandler(ABC):
     Subclasses must implement ingest().
     """
 
-    def __init__(self, adapter: object) -> None:
+    def __init__(self, adapter: PravoAdapterBase) -> None:
         """Initialize with a reference to the parent PravoAdapter.
 
         Args:

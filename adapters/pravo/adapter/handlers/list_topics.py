@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from core.models.models import TopicNode
+
+if TYPE_CHECKING:
+    from adapters.pravo.adapter.base import PravoAdapterBase
 
 
 class BaseListTopicsHandler(ABC):
@@ -13,7 +17,7 @@ class BaseListTopicsHandler(ABC):
     Subclasses must implement list_topics().
     """
 
-    def __init__(self, adapter: object) -> None:
+    def __init__(self, adapter: PravoAdapterBase) -> None:
         """Initialize with a reference to the parent PravoAdapter.
 
         Args:

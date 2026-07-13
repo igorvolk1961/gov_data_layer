@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from core.models.models import SearchContext, SearchResult
+
+if TYPE_CHECKING:
+    from adapters.pravo.adapter.base import PravoAdapterBase
 
 
 class BaseSearchHandler(ABC):
@@ -13,7 +17,7 @@ class BaseSearchHandler(ABC):
     Subclasses must implement search().
     """
 
-    def __init__(self, adapter: object) -> None:
+    def __init__(self, adapter: PravoAdapterBase) -> None:
         """Initialize with a reference to the parent PravoAdapter.
 
         Args:

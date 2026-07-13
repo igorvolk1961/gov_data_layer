@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from adapters.pravo.adapter.handlers import BaseIngestHandler
 from adapters.pravo.adapter.stub._data import _build_stub_documents
+
+if TYPE_CHECKING:
+    from adapters.pravo.adapter.base import PravoAdapterBase
 
 
 class StubIngestHandler(BaseIngestHandler):
     """Ingest stub documents — returns count of fixed documents."""
 
-    def __init__(self, adapter: object) -> None:
+    def __init__(self, adapter: PravoAdapterBase) -> None:
         """Initialize with stub documents."""
         super().__init__(adapter)
         self._stub_documents = _build_stub_documents()
