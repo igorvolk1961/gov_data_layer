@@ -11,6 +11,21 @@ Each public class must reside in a file whose name matches the snake_case form o
 
 **Exception:** Files containing multiple closely related classes (e.g., models) may use a module-level name instead of a single class name.
 
+## Observability: Tracer vs Logger
+
+The project uses a two-tier observability system:
+
+1. **Tracer** (`core.observability.tracer.Tracer`) — the **single observability channel** for all structured data. Use `tracer.trace()` with `span.set_input()`, `span.set_output()`, `span.set_error()`, and `**tags` for any operation that needs observability. All structured metadata (URLs, status codes, counts, errors) goes here.
+
+2. **Logger** (`core.observability.logger.get_logger()`) — only for **minimal console output** (stderr). Use only with `%s` formatting for:
+   - Startup/shutdown messages
+   - Error messages when tracer is unavailable
+   - Warnings that need immediate operator attention
+
+**Never** pass keyword arguments to `logger.info/warning/error/exception()` — use only `%s` positional formatting. Structured data must go through the Tracer.
+
+3. **Exception handlers must call `span.set_error()`** — every `except` block inside a traced operation **must** call `span.set_error(exc)` before any `logger.warning/error()`. This ensures all errors are visible in Langfuse, including intermediate retry failures. Do not rely solely on `logger` for error reporting inside spans.
+
 ## Commit Workflow
 
 When asked to perform a git commit:
@@ -18,3 +33,28 @@ When asked to perform a git commit:
 1. Create a temporary file with the commit message inside `.git\` (e.g., `.git\COMMIT_EDITMSG`). Files inside `.git\` are automatically ignored by git.
 2. Run `git add -A && git commit -F <temp_file>`.
 3. After successful commit, delete the temporary file.
+
+## Retry: Multiplicative Backoff
+
+All retry cycles in the project **must** use multiplicative (exponential) backoff.
+
+**Formula:** `delay = base_delay * multiplier ^ (attempt - 1)`
+
+**Default parameters:**
+- `max_retries = 3`
+- `base_delay = 1.0` seconds
+- `multiplier = 2` (factor 2x)
+- Delays: after 1st attempt → 1s, after 2nd → 2s, after 3rd → 4s
+
+**Non-retryable HTTP statuses** (break the retry loop immediately):
+- `400 Bad Request`
+- `401 Unauthorized`
+- `403 Forbidden`
+- `404 Not Found`
+- `405 Method Not Allowed`
+
+**Implementation example:**
+```python
+if attempt < self._max_retries:
+    await asyncio.sleep(1.0 * 2 ** (attempt - 1))
+```
