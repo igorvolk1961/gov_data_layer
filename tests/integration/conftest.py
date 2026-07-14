@@ -36,7 +36,10 @@ import pytest_asyncio  # noqa: E402
 
 from core.persistence.db_client import DatabaseClient  # noqa: E402
 
-TEST_DSN = "postgresql://odl:odl@127.0.0.1:5433/odl_metadata?sslmode=disable"
+TEST_DSN = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://odl:odl@127.0.0.1:5433/odl_metadata?sslmode=disable",
+)
 
 
 @pytest_asyncio.fixture

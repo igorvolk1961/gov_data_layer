@@ -13,8 +13,8 @@
 |----------|----------|
 | [`plans/SPEC.md`](plans/SPEC.md) | Полная спецификация: цель, границы, контракты, SLO, компромиссы |
 | [`plans/plan.md`](plans/plan.md) | План разработки по фазам, архитектура Dual API, детальный дизайн |
-| [`plans/context.md`](plans/context.md) | C4 Context — место слоя в экосистеме AI-агентов |
-| [`plans/container.md`](plans/container.md) | C4 Container — внутренняя структура: MCP + REST + ODLService |
+| [`plans/context.md`](plans/c4/context.md) | C4 Context — место слоя в экосистеме AI-агентов |
+| [`plans/container.md`](plans/c4/container.md) | C4 Container — внутренняя структура: MCP + REST + ODLService |
 | [`plans/adr.md`](plans/adr.md) | Архитектурные решения (ADRs) |
 | [`plans/data-structures-design.md`](plans/data-structures-design.md) | Дизайн структур данных и канонической модели |
 | [`examples/SKILL.md`](examples/SKILL.md) | Пример Agent Skill — инструкция для AI-агента |

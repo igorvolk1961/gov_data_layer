@@ -31,17 +31,17 @@ core/persistence/
 
 ```yaml
 services:
-  metadata-db:          # PostgreSQL — отдельный контейнер (БД)
+  metadata-db: # PostgreSQL — отдельный контейнер (БД)
     image: postgres:16-alpine
     container_name: odl-metadata-db
 
-  liquibase:            # Миграции — отдельный контейнер (init)
+  liquibase: # Миграции — отдельный контейнер (init)
     image: liquibase/liquibase:4.28
-    depends_on: [metadata-db]
+    depends_on: [ metadata-db ]
 
-  app:                  # Основное приложение — содержит persistence-логику
-    build: .
-    depends_on: [metadata-db]
+  app: # Основное приложение — содержит persistence-логику
+    build: ..
+    depends_on: [ metadata-db ]
     environment:
       - DATABASE_URL=postgresql://odl:odl@metadata-db:5432/odl_metadata
 ```

@@ -56,7 +56,7 @@ flowchart LR
 
 ### Шаг 10.1: Startup healthcheck — проверка БД при старте
 
-**Файл:** [`core/main.py`](../core/main.py)
+**Файл:** [`core/main.py`](../../core/main.py)
 
 После создания `DatabaseClient` (l.135-140) добавить явную проверку connectivity ПЕРЕД созданием сервера:
 
@@ -81,7 +81,7 @@ if db is not None:
 
 ### Шаг 10.2: Новая ошибка `PersistenceUnavailableError`
 
-**Файл:** [`core/errors/errors.py`](../core/errors/errors.py)
+**Файл:** [`core/errors/errors.py`](../../core/errors/errors.py)
 
 ```python
 class PersistenceUnavailableError(ODLBaseError):
@@ -221,7 +221,7 @@ async def get_document_detail(
 
 ### Шаг 10.6: Circuit Breaker для ingest-пути
 
-**Файл:** [`adapters/pravo/adapter/base.py`](../adapters/pravo/adapter/base.py)
+**Файл:** [`adapters/pravo/adapter/base.py`](../../adapters/pravo/adapter/base.py)
 
 Ingest-путь (`handler/ingest.py` → `_persist_document`) должен использовать CircuitBreaker:
 
@@ -259,7 +259,7 @@ async def _persist_document(self, doc: OfficialDocument) -> None:
 
 ### Шаг 10.7: Обновить `/health` endpoint
 
-**Файл:** [`core/api/rest_server.py`](../core/api/rest_server.py)
+**Файл:** [`core/api/rest_server.py`](../../core/api/rest_server.py)
 
 Добавить статус БД в healthcheck:
 
@@ -281,9 +281,9 @@ async def health() -> JSONResponse:
 ### Шаг 10.8: Обновить unit-тесты
 
 **Файлы:**
-- [`tests/unit/test_odl_service.py`](../tests/unit/test_odl_service.py) — тесты graceful degradation
-- [`tests/unit/test_pravo_adapter_production.py`](../tests/unit/test_pravo_adapter_production.py) — тесты circuit breaker
-- [`tests/unit/test_db_client_helpers.py`](../tests/unit/test_db_client_helpers.py) — возможно, тесты healthcheck
+- [`tests/unit/test_odl_service.py`](../../tests/unit/test_odl_service.py) — тесты graceful degradation
+- [`tests/unit/test_pravo_adapter_production.py`](../../tests/unit/test_pravo_adapter_production.py) — тесты circuit breaker
+- [`tests/unit/test_db_client_helpers.py`](../../tests/unit/test_db_client_helpers.py) — возможно, тесты healthcheck
 
 **Новые тесты:**
 
@@ -302,7 +302,7 @@ async def health() -> JSONResponse:
 
 ### Шаг 10.X: Обновить docstring — убрать упоминания опциональности персистентности
 
-**Файл:** [`core/odl_service.py`](../core/odl_service.py)
+**Файл:** [`core/odl_service.py`](../../core/odl_service.py)
 
 | Строки | Было | Стало |
 |--------|------|-------|
@@ -311,7 +311,7 @@ async def health() -> JSONResponse:
 | 129-130 | `If DatabaseClient is not configured (self._db is None), does nothing. If configured, persistence is mandatory — errors propagate to the caller.` | `If DatabaseClient is not configured (self._db is None), logs a warning and returns. If configured, persistence is mandatory — errors propagate to the caller.` |
 | 215-216 | `После получения документа от адаптера, опционально сохраняет его в PostgreSQL (если DatabaseClient передан в конструктор).` | `После получения документа от адаптера сохраняет его в PostgreSQL (если DatabaseClient передан в конструктор).` |
 
-**Файл:** [`adapters/pravo/adapter/base.py`](../adapters/pravo/adapter/base.py)
+**Файл:** [`adapters/pravo/adapter/base.py`](../../adapters/pravo/adapter/base.py)
 
 | Строки | Было | Стало |
 |--------|------|-------|
@@ -359,11 +359,11 @@ flowchart TD
 
 | Файл | Изменения |
 |------|-----------|
-| [`core/errors/errors.py`](../core/errors/errors.py) | + `PersistenceUnavailableError` |
-| [`core/odl_service.py`](../core/odl_service.py) | Заменить silent return на log+warn + tracer; wrap `_persist_document` call в try/except |
-| [`adapters/pravo/adapter/base.py`](../adapters/pravo/adapter/base.py) | Заменить silent return на log+warn; добавить CircuitBreaker для ingest |
-| [`core/api/rest_server.py`](../core/api/rest_server.py) | + `db_status` в /health |
-| [`core/main.py`](../core/main.py) | + startup healthcheck БД |
-| [`tests/unit/test_odl_service.py`](../tests/unit/test_odl_service.py) | + тесты graceful degradation |
-| [`tests/unit/test_pravo_adapter_production.py`](../tests/unit/test_pravo_adapter_production.py) | + тесты circuit breaker |
-| [`plans/task9_fix_varchar36_plan.md`](../plans/task9_fix_varchar36_plan.md) | Обновить статус |
+| [`core/errors/errors.py`](../../core/errors/errors.py) | + `PersistenceUnavailableError` |
+| [`core/odl_service.py`](../../core/odl_service.py) | Заменить silent return на log+warn + tracer; wrap `_persist_document` call в try/except |
+| [`adapters/pravo/adapter/base.py`](../../adapters/pravo/adapter/base.py) | Заменить silent return на log+warn; добавить CircuitBreaker для ingest |
+| [`core/api/rest_server.py`](../../core/api/rest_server.py) | + `db_status` в /health |
+| [`core/main.py`](../../core/main.py) | + startup healthcheck БД |
+| [`tests/unit/test_odl_service.py`](../../tests/unit/test_odl_service.py) | + тесты graceful degradation |
+| [`tests/unit/test_pravo_adapter_production.py`](../../tests/unit/test_pravo_adapter_production.py) | + тесты circuit breaker |
+| [`plans/task9_fix_varchar36_plan.md`](task9_fix_varchar36_plan.md) | Обновить статус |
