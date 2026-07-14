@@ -97,6 +97,23 @@ class DocumentRepository:
                 name=doc.region,
             )
 
+        # Ensure document_type reference row exists before inserting document
+        # (composite FK: document(source_id, document_type_id) → document_type(source_id, external_id))
+        if doc.document_type_id:
+            await self._ref_repo.get_or_create_document_type(
+                source_id=source_uuid,
+                external_id=doc.document_type_id,
+                name=doc.document_type or doc.document_type_id,
+            )
+
+        # Ensure organization reference row exists
+        if doc.organization_id:
+            await self._ref_repo.get_or_create_organization(
+                source_id=source_uuid,
+                external_id=doc.organization_id,
+                name=doc.organization or doc.organization_id,
+            )
+
         # publish_id — сырой идентификатор документа из источника
         publish_id = doc.publish_id
 

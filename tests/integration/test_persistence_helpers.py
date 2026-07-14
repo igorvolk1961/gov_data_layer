@@ -224,6 +224,7 @@ async def test_paginated_fetch(db: DatabaseClient) -> None:
 async def test_jsonb_serialize_deserialize_roundtrip(
     db: DatabaseClient,
     source_uuid: str,
+    doc_type_id: str,
     jurisdiction_id: str,
     region_id: str,
 ) -> None:
