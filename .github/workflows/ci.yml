@@ -113,15 +113,33 @@ jobs:
           cache: "pip"
           cache-dependency-path: pyproject.toml
 
-      - name: Install Tesseract OCR engine and poppler
+      - name: Install Tesseract OCR engine, poppler and PostgreSQL client
         run: |
           sudo apt-get update
-          sudo apt-get install -y tesseract-ocr tesseract-ocr-rus poppler-utils
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-rus poppler-utils postgresql-client
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+
+      - name: Apply database migrations
+        env:
+          PGPASSWORD: odl
+        run: |
+          for f in \
+            core/persistence/migrations/v001/000_create_data_source.sql \
+            core/persistence/migrations/v001/001_create_reference_tables.sql \
+            core/persistence/migrations/v001/002_create_document_tables.sql \
+            core/persistence/migrations/v001/003_create_document_relations.sql \
+            core/persistence/migrations/v001/004_create_change_tracking.sql \
+            core/persistence/migrations/v001/005_create_rubric_table.sql \
+            core/persistence/migrations/v001/006_create_document_rubric.sql \
+            core/persistence/migrations/v001/007_rename_external_id_to_publish_id.sql \
+            core/persistence/migrations/v001/008_rename_document_columns.sql; do
+            echo "Applying $f..."
+            psql -h localhost -p 5432 -U odl -d odl_metadata -f "$f"
+          done
 
       - name: Run tests with coverage
         env:
