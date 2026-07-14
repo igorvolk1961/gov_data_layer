@@ -7,6 +7,7 @@ from core.errors.errors import (
     OCRQualityError,
     OCRUnavailableError,
     ODLBaseError,
+    PersistenceUnavailableError,
     SourceUnavailableError,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "OCRQualityError",
     "OCRUnavailableError",
     "ODLBaseError",
+    "PersistenceUnavailableError",
     "SourceUnavailableError",
 ]

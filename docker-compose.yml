@@ -77,6 +77,8 @@ services:
   metadata-db:
     image: postgres:16-alpine
     container_name: odl-metadata-db
+    ports:
+      - "5433:5432"
     environment:
       - POSTGRES_USER=odl
       - POSTGRES_PASSWORD=odl
@@ -98,7 +100,8 @@ services:
       --url=jdbc:postgresql://metadata-db:5432/odl_metadata
       --username=odl
       --password=odl
-      --changeLogFile=/liquibase/changelog/changelog-root.xml
+      --searchPath=/liquibase/changelog
+      --changeLogFile=changelog-root.xml
       update
     volumes:
       - ./core/persistence/migrations:/liquibase/changelog

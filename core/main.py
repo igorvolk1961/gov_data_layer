@@ -34,10 +34,27 @@ async def _run_server(
 ) -> None:
     """Run the uvicorn server with graceful shutdown support.
 
+    Performs a startup healthcheck: if DatabaseClient is configured, verifies
+    connectivity before the server starts listening. Fail-fast on failure.
+
     Args:
         rest_server: The uvicorn server instance to run.
         db: Optional DatabaseClient to close on shutdown.
     """
+    # Startup healthcheck — fail fast if DB is configured but unavailable
+    if db is not None:
+        try:
+            await db.connect()
+            get_logger("odl.main").info(
+                "Database healthcheck passed — PostgreSQL is available",
+            )
+        except Exception:
+            get_logger("odl.main").critical(
+                "Database healthcheck FAILED — PostgreSQL is unavailable. "
+                "Check database_url and ensure PostgreSQL is running.",
+            )
+            sys.exit(1)
+
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
@@ -141,8 +158,8 @@ def main() -> None:
 
     service = ODLService(adapters=adapters, cache=cache, db=db)
 
-    # Create FastAPI app (REST) with cache for health check
-    app = create_app(service, cache=cache)
+    # Create FastAPI app (REST) with cache and db for health check
+    app = create_app(service, cache=cache, db=db)
 
     # Create MCP server and mount as SSE app under /mcp
     mcp_server = create_mcp_server(service)

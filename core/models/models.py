@@ -104,7 +104,7 @@ class OfficialDocument(BaseModel):
     # Pydantic v2 uses ISO format by default for datetime serialization,
     # which matches the previous json_encoders override. Explicit serializer
     # ensures consistent behavior for model_dump_json() and json.dumps().
-    @field_serializer("ingest_date", "valid_from", "valid_to", "publish_date")
+    @field_serializer("created_at", "valid_from", "valid_to", "publish_date")
     @classmethod
     def serialize_datetime(cls, v: datetime | None) -> str | None:
         return v.isoformat() if v else None
@@ -128,14 +128,26 @@ class OfficialDocument(BaseModel):
         description="Тематические рубрики. Документ может относиться к нескольким рубрикам. "
         "Пример: ['налоги', 'земельное право']",
     )
-    organization: list[str] = Field(
-        default_factory=list,
-        description="Органы, принявшие документ. Документ может быть принят несколькими органами. "
-        "Пример: ['Минюст России', 'ФНС России']",
+    organization: str | None = Field(
+        default=None,
+        description="Орган, принявший документ. Скалярное значение — один орган. "
+        "Пример: 'Минюст России'",
+    )
+    organization_id: str | None = Field(
+        default=None,
+        description="GUID органа, принявшего документ, из API источника. "
+        "Используется как external_id в таблице organization. "
+        "Пример: '3fa85f64-5717-4562-b3fc-2c963f66afa6'",
+    )
+    document_type_id: str | None = Field(
+        default=None,
+        description="GUID вида документа из API источника. "
+        "Используется как external_id в таблице document_type. "
+        "Пример: '3fa85f64-5717-4562-b3fc-2c963f66afa6'",
     )
 
     # Две оси времени
-    ingest_date: datetime = Field(
+    created_at: datetime = Field(
         default_factory=_utc_now,
         description="Дата загрузки документа в индекс (свежесть копии)",
     )
@@ -165,7 +177,7 @@ class OfficialDocument(BaseModel):
     publish_date: datetime | None = Field(
         default=None,
         description="Дата публикации документа (из publishDateShort API pravo.gov.ru). "
-        "Отличается от ingest_date — это дата первой официальной публикации.",
+        "Отличается от created_at — это дата первой официальной публикации.",
     )
 
     # Source-специфичные атрибуты (не маппятся в канонические поля)
@@ -265,7 +277,7 @@ class SearchResult(BaseModel):
         description="Органы, принявшие документ. "
         "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
     )
-    ingest_date: datetime = Field(description="Дата инжеста")
+    created_at: datetime = Field(description="Дата загрузки документа в индекс (свежесть копии)")
     legal_status: LegalStatus = Field(description="Юридический статус")
     confidence: ConfidenceSignals = Field(description="Сигналы уверенности для данного результата")
 
@@ -335,7 +347,7 @@ class DocumentDetail(BaseModel):
         default_factory=list,
         description="Органы, принявшие документ. Документ может быть принят несколькими органами.",
     )
-    ingest_date: datetime = Field(description="Дата загрузки документа в индекс (свежесть копии)")
+    created_at: datetime = Field(description="Дата загрузки документа в индекс (свежесть копии)")
     valid_from: datetime | None = Field(default=None, description="Дата начала юридической силы")
     valid_to: datetime | None = Field(
         default=None,

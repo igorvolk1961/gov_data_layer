@@ -4,9 +4,10 @@
 При поиске опрашивает все адаптеры и агрегирует результаты.
 При получении конкретного документа определяет нужный адаптер по source_id.
 
-Поддерживает опциональную персистентность в PostgreSQL через DatabaseClient
-и репозитории. Если DatabaseClient не передан — работает без БД.
-Если передан — персистентность обязательна, ошибки БД пробрасываются наверх.
+Поддерживает персистентность в PostgreSQL через DatabaseClient и репозитории.
+Если DatabaseClient передан — персистентность обязательна, ошибки БД
+пробрасываются наверх. Если не передан — персистентность не происходит,
+логируется предупреждение.
 """
 
 from __future__ import annotations
@@ -50,9 +51,9 @@ class ODLService(ODLServiceProtocol):
     Принимает список SourceAdapter'ов (через DI) и делегирует им методы Protocol.
     При поиске опрашивает все адаптеры и агрегирует результаты.
 
-    Опционально принимает DatabaseClient для персистентности в PostgreSQL.
-    Если DatabaseClient не передан — работает без БД.
+    Принимает DatabaseClient для персистентности в PostgreSQL.
     Если передан — персистентность обязательна, ошибки БД пробрасываются наверх.
+    Если не передан — персистентность не происходит, логируется предупреждение.
     """
 
     def __init__(
@@ -70,6 +71,12 @@ class ODLService(ODLServiceProtocol):
         self._ref_repo: ReferenceRepository | None = None
         self._section_repo: SectionRepository | None = None
         self._change_repo: ChangeTrackingRepository | None = None
+
+        # Pass DatabaseClient to adapters that support it
+        if db is not None:
+            for adapter in self._adapters:
+                if hasattr(adapter, "_db"):
+                    adapter._db = db
 
     @property
     def tracer(self) -> Tracer:
@@ -120,14 +127,20 @@ class ODLService(ODLServiceProtocol):
     ) -> None:
         """Persist a canonical document + its sections to PostgreSQL.
 
-        If DatabaseClient is not configured (self._db is None), does nothing.
-        If configured, persistence is mandatory — errors propagate to the caller.
+        If DatabaseClient is not configured (self._db is None), logs a warning
+        and returns. If configured, persistence is mandatory — errors propagate
+        to the caller.
 
         This is called as a side-effect from get_document_detail(), so the
         try/except in that method will catch and log any DB errors without
         failing the API response.
         """
         if self._db is None:
+            logger.warning(
+                "Database not configured — skipping persistence for document %s (source=%s)",
+                doc.id,
+                source_id,
+            )
             return
 
         # Ensure DB connection is established
@@ -206,9 +219,10 @@ class ODLService(ODLServiceProtocol):
     ) -> DocumentDetail:
         """Полная карточка документа — делегирует адаптеру по source_id.
 
-        После получения документа от адаптера, опционально сохраняет его
-        в PostgreSQL (если DatabaseClient передан в конструктор).
-        Ошибки БД пробрасываются наверх и обрабатываются вызывающим кодом.
+        После получения документа от адаптера сохраняет его в PostgreSQL
+        (если DatabaseClient передан в конструктор). Ошибка БД не ломает
+        ответ — данные возвращаются агенту, ошибка логируется и пишется
+        в tracer.
         """
         with self.tracer.trace("get_document_detail", source_id=source_id) as span:
             span.set_input({"source_id": source_id})
@@ -235,8 +249,8 @@ class ODLService(ODLServiceProtocol):
                 jurisdiction=doc.jurisdiction,
                 region=doc.region,
                 topic=doc.topic,
-                organization=doc.organization,
-                ingest_date=doc.ingest_date,
+                organization=[doc.organization] if doc.organization else [],
+                created_at=doc.created_at,
                 valid_from=doc.valid_from,
                 valid_to=doc.valid_to,
                 legal_status=doc.legal_status,
@@ -253,7 +267,23 @@ class ODLService(ODLServiceProtocol):
             span.set_output({"document_id": detail.id, "title": detail.title})
 
         # Persist to PostgreSQL outside the tracing span (side-effect, not core logic)
-        await self._persist_document(doc, source_id, toc)
+        # Graceful degradation: ошибка БД не ломает ответ агента
+        try:
+            await self._persist_document(doc, source_id, toc)
+        except Exception as exc:
+            logger.exception(
+                "Failed to persist document %s (source=%s) — returning detail without persistence",
+                doc.id,
+                source_id,
+            )
+            with self.tracer.trace("persistence.failed") as span:
+                span.set_input(
+                    {
+                        "document_id": doc.id,
+                        "source_id": source_id,
+                    }
+                )
+                span.set_error(exc)
 
         return detail
 

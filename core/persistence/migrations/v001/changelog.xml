@@ -68,4 +68,32 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="v001-007" author="kilo-code">
+        <comment>Rename document.external_id to publish_id — column name now matches canonical model</comment>
+        <sqlFile path="007_rename_external_id_to_publish_id.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            ALTER TABLE document RENAME COLUMN publish_id TO external_id;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v001-008" author="kilo-code">
+        <comment>Rename document columns to match OfficialDocument model: abstract→summary, effective_date→valid_from, publication_date→publish_date, signing_date→valid_to, doc_type_id→document_type_id (VARCHAR(36) with composite FK), add organization_id</comment>
+        <sqlFile path="008_rename_document_columns.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            ALTER TABLE document DROP CONSTRAINT IF EXISTS fk_document_organization;
+            ALTER TABLE document DROP CONSTRAINT IF EXISTS fk_document_document_type;
+            DROP INDEX IF EXISTS idx_document_organization_id;
+            ALTER TABLE document DROP COLUMN IF EXISTS organization_id;
+            ALTER TABLE document RENAME COLUMN document_type_id TO doc_type_id;
+            ALTER TABLE document ALTER COLUMN doc_type_id TYPE UUID USING doc_type_id::uuid;
+            ALTER TABLE document ADD CONSTRAINT document_doc_type_id_fkey FOREIGN KEY (doc_type_id) REFERENCES document_type(id);
+            ALTER TABLE document RENAME COLUMN valid_to TO signing_date;
+            ALTER TABLE document RENAME COLUMN publish_date TO publication_date;
+            ALTER TABLE document RENAME COLUMN valid_from TO effective_date;
+            ALTER TABLE document RENAME COLUMN summary TO abstract;
+            ALTER INDEX IF EXISTS idx_document_publish_date RENAME TO idx_document_publication_date;
+            ALTER INDEX IF EXISTS idx_document_valid_from RENAME TO idx_document_effective_date;
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

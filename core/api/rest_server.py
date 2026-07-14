@@ -25,6 +25,7 @@ from core.cache import CacheClient
 from core.errors import InvalidInputError, NotFoundError, SourceUnavailableError
 from core.models.models import SearchContext
 from core.observability import get_tracer
+from core.persistence import DatabaseClient
 
 
 class SearchRequest(BaseModel):
@@ -84,12 +85,14 @@ def _add_tracing_middleware(app: FastAPI) -> None:
 def create_app(
     service: ODLServiceProtocol,
     cache: CacheClient | None = None,
+    db: DatabaseClient | None = None,
 ) -> FastAPI:
     """Создать FastAPI-приложение с внедрённым ODLService.
 
     Args:
         service: Реализация ODLServiceProtocol (заглушка или настоящий сервис).
         cache: Опциональный CacheClient для отчёта о состоянии Redis.
+        db: Опциональный DatabaseClient для отчёта о состоянии PostgreSQL.
 
     Returns:
         Настроенное FastAPI-приложение.
@@ -114,7 +117,14 @@ def create_app(
     async def health() -> JSONResponse:
         """Проверка работоспособности сервиса."""
         redis_status = "connected" if (cache and cache.available) else "unavailable"
-        return JSONResponse(content={"status": "ok", "redis": redis_status})
+        db_status = "connected" if (db and db.available) else "unavailable"
+        return JSONResponse(
+            content={
+                "status": "ok",
+                "redis": redis_status,
+                "database": db_status,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Search

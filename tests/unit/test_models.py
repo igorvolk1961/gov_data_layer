@@ -79,7 +79,7 @@ class TestEmptyIdRejection:
                 snippet="S",
                 url="http://example.com",
                 source_name="Src",
-                ingest_date=now,
+                created_at=now,
                 legal_status=LegalStatus.UNKNOWN,
                 confidence=cs,
             )
@@ -173,13 +173,13 @@ class TestOfficialDocument:
         assert doc.jurisdiction is None
         assert doc.region is None
         assert doc.topic == []
-        assert doc.organization == []
+        assert doc.organization is None
         assert doc.legal_status == LegalStatus.UNKNOWN
         assert doc.valid_from is None
         assert doc.valid_to is None
-        # ingest_date should be auto-set to now (UTC)
-        assert isinstance(doc.ingest_date, datetime)
-        assert doc.ingest_date.tzinfo is not None
+        # created_at should be auto-set to now (UTC)
+        assert isinstance(doc.created_at, datetime)
+        assert doc.created_at.tzinfo is not None
 
     def test_with_all_fields(self) -> None:
         now = datetime.now(timezone.utc)
@@ -193,8 +193,10 @@ class TestOfficialDocument:
             jurisdiction="федеральная",
             region="Московская область",
             topic=["налоги", "земельное право"],
-            organization=["ФНС", "Минюст"],
-            ingest_date=now,
+            organization="ФНС",
+            organization_id="org-guid-1",
+            document_type_id="doc-type-guid-1",
+            created_at=now,
             valid_from=datetime(2025, 1, 1, tzinfo=timezone.utc),
             valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
             legal_status=LegalStatus.ACTIVE,
@@ -203,8 +205,10 @@ class TestOfficialDocument:
         assert doc.jurisdiction == "федеральная"
         assert doc.region == "Московская область"
         assert doc.topic == ["налоги", "земельное право"]
-        assert doc.organization == ["ФНС", "Минюст"]
-        assert doc.ingest_date == now
+        assert doc.organization == "ФНС"
+        assert doc.organization_id == "org-guid-1"
+        assert doc.document_type_id == "doc-type-guid-1"
+        assert doc.created_at == now
         assert doc.valid_from == datetime(2025, 1, 1, tzinfo=timezone.utc)
         assert doc.valid_to == datetime(2026, 12, 31, tzinfo=timezone.utc)
         assert doc.legal_status == LegalStatus.ACTIVE
@@ -241,7 +245,7 @@ class TestOfficialDocument:
         assert '"id":"doc-1"' in json_str
         assert '"legal_status":"unknown"' in json_str
         # datetime should be ISO format
-        assert "ingest_date" in json_str
+        assert "created_at" in json_str
 
     def test_deserialize_from_dict(self) -> None:
         now = datetime.now(timezone.utc)
@@ -250,7 +254,7 @@ class TestOfficialDocument:
             "title": "Test",
             "source": {"id": "src", "name": "Src", "url": "http://example.com"},
             "url": "http://example.com/doc",
-            "ingest_date": now.isoformat(),
+            "created_at": now.isoformat(),
             "legal_status": "active",
         }
         doc = OfficialDocument.model_validate(data)
@@ -343,7 +347,7 @@ class TestSearchResult:
             region="Московская область",
             topic=["налоги", "земельное право"],
             organization=["ФНС", "Минюст"],
-            ingest_date=now,
+            created_at=now,
             legal_status=LegalStatus.ACTIVE,
             confidence=cs,
         )
@@ -368,7 +372,7 @@ class TestSearchResult:
             snippet="snip",
             url="http://example.com",
             source_name="Src",
-            ingest_date=now,
+            created_at=now,
             legal_status=LegalStatus.UNKNOWN,
             confidence=cs,
         )
@@ -394,7 +398,7 @@ class TestSearchResult:
             region="Московская область",
             topic=["налоги"],
             organization=["ФНС"],
-            ingest_date=now,
+            created_at=now,
             legal_status=LegalStatus.MODIFIED,
             confidence=cs,
         )
@@ -427,7 +431,7 @@ class TestSearchResponse:
             snippet="snip",
             url="http://example.com",
             source_name="Src",
-            ingest_date=now,
+            created_at=now,
             legal_status=LegalStatus.ACTIVE,
             confidence=cs,
         )
@@ -456,7 +460,7 @@ class TestSearchResponse:
                 snippet="snip",
                 url=f"http://example.com/doc-{i}",
                 source_name="Src",
-                ingest_date=now,
+                created_at=now,
                 legal_status=LegalStatus.ACTIVE,
                 confidence=cs,
             )
@@ -482,7 +486,7 @@ class TestSearchResponse:
             snippet="snip",
             url="http://example.com",
             source_name="Src",
-            ingest_date=now,
+            created_at=now,
             legal_status=LegalStatus.ACTIVE,
             confidence=cs,
         )
@@ -507,7 +511,7 @@ class TestDocumentDetail:
             title="Test Doc",
             url="http://example.com/doc",
             source_name="Test Source",
-            ingest_date=now,
+            created_at=now,
             legal_status=LegalStatus.ACTIVE,
         )
         assert detail.id == "doc-1"
@@ -518,7 +522,7 @@ class TestDocumentDetail:
         assert detail.region is None
         assert detail.topic == []
         assert detail.organization == []
-        assert detail.ingest_date == now
+        assert detail.created_at == now
         assert detail.valid_from is None
         assert detail.valid_to is None
         assert detail.legal_status == LegalStatus.ACTIVE
@@ -552,7 +556,7 @@ class TestDocumentDetail:
             region="Московская область",
             topic=["налоги", "земельное право"],
             organization=["ФНС", "Минюст"],
-            ingest_date=now,
+            created_at=now,
             valid_from=datetime(2025, 1, 1, tzinfo=timezone.utc),
             valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
             legal_status=LegalStatus.ACTIVE,
@@ -579,7 +583,7 @@ class TestDocumentDetail:
             title="Test",
             url="http://example.com",
             source_name="Src",
-            ingest_date=now,
+            created_at=now,
             legal_status=LegalStatus.UNKNOWN,
         )
         d = detail.model_dump()
@@ -597,7 +601,7 @@ class TestDocumentDetail:
                 title="Test",
                 url="http://example.com",
                 source_name="Src",
-                ingest_date=now,
+                created_at=now,
                 legal_status=LegalStatus.UNKNOWN,
             )
 

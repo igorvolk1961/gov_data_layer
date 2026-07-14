@@ -47,6 +47,8 @@ class ProductionGetHandler(BaseGetHandler):
                 doc = adapter._parser.parse_document(raw)
                 # Cache the document after successful fetch
                 adapter._document_cache[document_id] = (doc, datetime.now(timezone.utc))
+                # Persist to PostgreSQL if DB is configured
+                await adapter._persist_document(doc)
                 span.set_output({"found": True, "publish_id": publish_id})
                 return doc
             except SourceUnavailableError:

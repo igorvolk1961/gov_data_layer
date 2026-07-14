@@ -94,7 +94,7 @@ class TestSearchDocuments:
                     snippet="Test snippet",
                     url="http://example.com/doc-1",
                     source_name="Test Source",
-                    ingest_date=_now(),
+                    created_at=_now(),
                     legal_status=LegalStatus.ACTIVE,
                     confidence=ConfidenceSignals(
                         retrieval_relevance=0.95,
@@ -231,7 +231,7 @@ class TestGetDocumentDetail:
             title="Test Document",
             url="http://example.com/doc-1",
             source_name="Test Source",
-            ingest_date=_now(),
+            created_at=_now(),
             legal_status=LegalStatus.ACTIVE,
         )
 

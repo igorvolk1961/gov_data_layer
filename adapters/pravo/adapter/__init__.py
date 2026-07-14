@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from adapters.pravo.pravo_client import PravoClient
     from adapters.pravo.pravo_parser import PravoParser
     from core.observability.tracer import Tracer
+    from core.persistence.db_client import DatabaseClient
 
 
 class PravoAdapter(PravoAdapterBase):
@@ -78,6 +79,7 @@ class PravoAdapter(PravoAdapterBase):
         parser: PravoParser | None = None,
         ocr_provider: OCRProvider | None = None,
         tracer: Tracer | None = None,
+        db: DatabaseClient | None = None,
     ) -> None:
         """Initialize PravoAdapter and build handlers for the given mode.
 
@@ -91,6 +93,9 @@ class PravoAdapter(PravoAdapterBase):
             parser: External parser (for testing).
             ocr_provider: Optional OCR provider (for get_content in production).
             tracer: Optional tracer for observability.
+            db: Optional DatabaseClient for PostgreSQL persistence.
+                Required for production use; None allowed for tests
+                that only verify the HTTP → parse → model pipeline.
         """
         if mode is None:
             mode = os.getenv("PRAVO_MODE", "production")
@@ -100,6 +105,7 @@ class PravoAdapter(PravoAdapterBase):
             parser=parser,
             ocr_provider=ocr_provider,
             tracer=tracer,
+            db=db,
         )
         self._search_handler: BaseSearchHandler
         self._get_handler: BaseGetHandler

@@ -112,18 +112,17 @@ class PravoParser:
         publish_date = self._parse_date(raw.get("publishDateShort"))
         valid_from = self._parse_date(raw.get("documentDate"))
 
-        # documentTypeId — GUID вида документа → lookup через кэш
-        doc_type: str | None = None
-        doc_type_id = raw.get("documentTypeId")
-        if doc_type_id:
-            doc_type = self._doc_type_cache.get(str(doc_type_id))
+        # documentTypeId — GUID вида документа
+        doc_type_id: str | None = None
+        doc_type_id_raw = raw.get("documentTypeId")
+        if doc_type_id_raw:
+            doc_type_id = str(doc_type_id_raw)
 
-        # signatoryAuthorityId — GUID принявшего органа → lookup через кэш
-        organization: list[str] = []
+        # signatoryAuthorityId — GUID принявшего органа
+        organization_id: str | None = None
         authority_id = raw.get("signatoryAuthorityId")
         if authority_id:
-            org_name = self._authority_cache.get(str(authority_id))
-            organization = [org_name] if org_name else [f"authority:{authority_id}"]
+            organization_id = str(authority_id)
 
         # Source-специфичные атрибуты в meta
         meta: dict[str, Any] = {}
@@ -150,11 +149,11 @@ class PravoParser:
             "url": url,
             "summary": raw.get("complexName") or raw.get("summary"),
             "document_number": raw.get("number"),
-            "document_type": doc_type,
             "publish_id": publish_id,
             "publish_date": publish_date,
             "valid_from": valid_from,
-            "organization": organization,
+            "organization_id": organization_id,
+            "document_type_id": doc_type_id,
             "meta": meta,
             "legal_status": LegalStatus.UNKNOWN,
         }

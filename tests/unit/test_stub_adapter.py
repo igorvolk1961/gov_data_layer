@@ -140,7 +140,7 @@ class TestGet:
     async def test_get_existing_doc2(self, adapter: StubAdapter) -> None:
         doc = await adapter.get("doc-2")
         assert doc.id == "doc-2"
-        assert doc.organization == ["ФНС"]
+        assert doc.organization == "ФНС"
         assert doc.jurisdiction == "региональная"
         # doc-2 has valid_to
         assert doc.valid_to is not None

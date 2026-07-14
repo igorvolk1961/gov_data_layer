@@ -10,19 +10,22 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from adapters.base import RSSAdapter
+from adapters.base.circuit_breaker import CircuitBreaker
 from adapters.pravo.adapter.constants import (
     _CACHE_POPULATE_TTL,
     _STALE_CACHE_TTL,
 )
 from adapters.pravo.pravo_client import PravoClient
 from adapters.pravo.pravo_parser import PravoParser
-from core.errors import SourceUnavailableError
+from core.errors import PersistenceUnavailableError, SourceUnavailableError
 from core.models.models import (
     OfficialDocument,
     TocNode,
     TopicNode,
 )
 from core.observability.logger import get_logger
+from core.persistence import DatabaseClient
+from core.persistence.repository import DocumentRepository, ReferenceRepository
 
 if TYPE_CHECKING:
     from adapters.ocr.ocr_provider import OCRProvider
@@ -48,6 +51,7 @@ class PravoAdapterBase(RSSAdapter):
         parser: PravoParser | None = None,
         ocr_provider: OCRProvider | None = None,
         tracer: Tracer | None = None,
+        db: DatabaseClient | None = None,
     ) -> None:
         """Initialize PravoAdapterBase.
 
@@ -57,6 +61,9 @@ class PravoAdapterBase(RSSAdapter):
             parser: External parser (for testing).
             ocr_provider: Optional OCR provider (for get_content in production).
             tracer: Optional tracer for observability.
+            db: Optional DatabaseClient for PostgreSQL persistence.
+                Required for production use; None allowed for tests
+                that only verify the HTTP → parse → model pipeline.
         """
         # RSS feed for pravo.gov.ru (stub for now).
         # TODO: Replace feed_url with the real pravo.gov.ru RSS feed URL
@@ -72,6 +79,14 @@ class PravoAdapterBase(RSSAdapter):
         self._pravo_client = client or PravoClient(tracer=tracer)
         self._parser = parser or PravoParser()
         self._ocr_provider = ocr_provider
+        self._db = db
+
+        # Circuit breaker for DB persistence (ingest path)
+        self._persistence_cb = CircuitBreaker(
+            name="db_persistence",
+            failure_threshold=3,
+            recovery_timeout=30.0,
+        )
 
         # Stale document cache: {document_id: (OfficialDocument, cache_time)}
         # Used as fallback when the API is unavailable.
@@ -79,6 +94,10 @@ class PravoAdapterBase(RSSAdapter):
 
         # Cache population tracking: when were caches last refreshed?
         self._cache_populated_at: datetime | None = None
+
+        # Lazy-init repositories
+        self._ref_repo: ReferenceRepository | None = None
+        self._doc_repo: DocumentRepository | None = None
 
     @property
     def source_id(self) -> str:
@@ -315,6 +334,150 @@ class PravoAdapterBase(RSSAdapter):
                 )
             )
         return topics
+
+    @property
+    def _ref_repo_lazy(self) -> ReferenceRepository | None:
+        """Lazy init of ReferenceRepository (only if DB is available)."""
+        if self._ref_repo is None and self._db is not None:
+            self._ref_repo = ReferenceRepository(self._db)
+        return self._ref_repo
+
+    @property
+    def _doc_repo_lazy(self) -> DocumentRepository | None:
+        """Lazy init of DocumentRepository (only if DB is available)."""
+        if self._doc_repo is None and self._db is not None:
+            ref_repo = self._ref_repo_lazy
+            assert ref_repo is not None
+            self._doc_repo = DocumentRepository(self._db, ref_repo)
+        return self._doc_repo
+
+    async def _ensure_reference_names(self, doc: OfficialDocument) -> None:
+        """Lazy-заполнение имён органов и типов документов из кэша парсера.
+
+        Если кэш пуст — однократно загружает все справочные данные из API
+        и устанавливает doc.organization / doc.document_type из кэша.
+        """
+        parser = self._parser
+
+        # --- Организация ---
+        if doc.organization_id and not doc.organization:
+            if not parser._authority_cache:
+                await self._lazy_load_authorities()
+            doc.organization = parser._authority_cache.get(doc.organization_id)
+
+        # --- Тип документа ---
+        if doc.document_type_id and not doc.document_type:
+            if not parser._doc_type_cache:
+                await self._lazy_load_doc_types(doc.organization_id)
+            doc.document_type = parser._doc_type_cache.get(doc.document_type_id)
+
+    async def _lazy_load_authorities(self) -> None:
+        """Загрузить все органы из API в кэш парсера."""
+        try:
+            blocks = await self._pravo_client.get_public_blocks()
+            if not blocks:
+                return
+            block_id = str(blocks[0].get("id", ""))
+            if not block_id:
+                return
+            categories = await self._pravo_client.get_categories(block=block_id)
+            if not categories:
+                return
+            cat_id = str(categories[0].get("id", ""))
+            if not cat_id:
+                return
+            authorities = await self._pravo_client.get_signatory_authorities(
+                block=block_id,
+                category=cat_id,
+            )
+            self._parser.update_authority_cache(authorities)
+        except SourceUnavailableError:
+            logger.warning("Failed to load authorities — API unavailable")
+
+    async def _lazy_load_doc_types(self, authority_id: str | None) -> None:
+        """Загрузить все типы документов из API в кэш парсера."""
+        try:
+            blocks = await self._pravo_client.get_public_blocks()
+            if not blocks:
+                return
+            block_id = str(blocks[0].get("id", ""))
+            if not block_id:
+                return
+            categories = await self._pravo_client.get_categories(block=block_id)
+            if not categories:
+                return
+            cat_id = str(categories[0].get("id", ""))
+            if not cat_id:
+                return
+            doc_types = await self._pravo_client.get_document_types(
+                block=block_id,
+                category=cat_id,
+                authority_id=authority_id or "",
+            )
+            self._parser.update_doc_type_cache(doc_types)
+        except SourceUnavailableError:
+            logger.warning("Failed to load doc types — API unavailable")
+
+    async def _persist_document(self, doc: OfficialDocument) -> None:
+        """Persist a canonical document to PostgreSQL if DB is configured.
+
+        If DatabaseClient is not configured (self._db is None), logs a warning
+        and returns. If configured, persistence is mandatory — errors propagate
+        to the caller.
+
+        Uses CircuitBreaker for the ingest path: after 3 consecutive failures
+        the circuit opens and raises PersistenceUnavailableError immediately
+        without calling the DB.
+
+        Args:
+            doc: The canonical OfficialDocument to persist.
+
+        Raises:
+            PersistenceUnavailableError: If circuit breaker is OPEN.
+            asyncpg.PostgresError: On query failure.
+            ConnectionError: If not connected.
+        """
+        if not self._persistence_cb.can_request():
+            logger.warning(
+                "Persistence circuit breaker is OPEN — skipping persistence for %s",
+                doc.id,
+            )
+            raise PersistenceUnavailableError(
+                f"Persistence circuit breaker is OPEN for document {doc.id}",
+            )
+
+        if self._db is None:
+            logger.warning(
+                "Database not configured — skipping persistence for document %s",
+                doc.id,
+            )
+            return
+
+        try:
+            await self._db.connect()
+
+            ref_repo = self._ref_repo_lazy
+            doc_repo = self._doc_repo_lazy
+            assert ref_repo is not None
+            assert doc_repo is not None
+
+            # Get or create data source
+            source_uuid = await ref_repo.get_or_create_data_source(
+                source_id=self.source_id,
+                name=doc.source.name,
+                url=doc.url,
+            )
+
+            # Lazy-заполнение имён справочных записей перед upsert
+            await self._ensure_reference_names(doc)
+
+            # Upsert the document
+            await doc_repo.upsert_document(doc, source_uuid)
+
+            self._persistence_cb.record_success()
+        except Exception:
+            self._persistence_cb.record_failure()
+            raise
 
 
 __all__ = [

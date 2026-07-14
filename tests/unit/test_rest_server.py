@@ -147,12 +147,12 @@ def _make_search_result(
     snippet: str = "A test snippet",
     url: str = "http://example.com/doc-1",
     source_name: str = "Test Source",
-    ingest_date: datetime.datetime | None = None,
+    created_at: datetime.datetime | None = None,
     legal_status: LegalStatus = LegalStatus.ACTIVE,
     confidence: ConfidenceSignals | None = None,
 ) -> SearchResult:
-    if ingest_date is None:
-        ingest_date = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+    if created_at is None:
+        created_at = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
     if confidence is None:
         confidence = ConfidenceSignals(
             retrieval_relevance=0.95,
@@ -165,7 +165,7 @@ def _make_search_result(
         snippet=snippet,
         url=url,
         source_name=source_name,
-        ingest_date=ingest_date,
+        created_at=created_at,
         legal_status=legal_status,
         confidence=confidence,
     )
@@ -237,17 +237,17 @@ def _make_document_detail(
     title: str = "Test",
     url: str = "http://example.com/doc-1",
     source_name: str = "Test Source",
-    ingest_date: datetime.datetime | None = None,
+    created_at: datetime.datetime | None = None,
     legal_status: LegalStatus = LegalStatus.ACTIVE,
 ) -> DocumentDetail:
-    if ingest_date is None:
-        ingest_date = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+    if created_at is None:
+        created_at = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
     return DocumentDetail(
         id=doc_id,
         title=title,
         url=url,
         source_name=source_name,
-        ingest_date=ingest_date,
+        created_at=created_at,
         legal_status=legal_status,
     )
 

@@ -59,3 +59,14 @@ class OCRQualityError(ODLBaseError):
 
     def __init__(self, message: str = "OCR quality is below acceptable threshold") -> None:
         super().__init__(message, code="OCR_QUALITY")
+
+
+class PersistenceUnavailableError(ODLBaseError):
+    """Система персистентности (БД) недоступна.
+
+    Используется для graceful degradation — не фатальная ошибка API,
+    а сигнал о том, что метаданные не были сохранены.
+    """
+
+    def __init__(self, message: str = "Persistence layer is unavailable") -> None:
+        super().__init__(message, code="PERSISTENCE_UNAVAILABLE")

@@ -58,7 +58,8 @@ class StubSearchHandler(BaseSearchHandler):
                     if context.topic and not any(t in doc.topic for t in context.topic):
                         continue
                     if context.organization and not any(
-                        o in doc.organization for o in context.organization
+                        doc.organization is not None and o == doc.organization
+                        for o in context.organization
                     ):
                         continue
 
@@ -73,7 +74,7 @@ class StubSearchHandler(BaseSearchHandler):
                         region=doc.region,
                         topic=doc.topic,
                         organization=doc.organization,
-                        ingest_date=doc.ingest_date,
+                        created_at=doc.created_at,
                         legal_status=doc.legal_status,
                         confidence=ConfidenceSignals(
                             retrieval_relevance=0.95,

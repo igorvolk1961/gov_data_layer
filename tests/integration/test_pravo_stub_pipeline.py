@@ -83,7 +83,7 @@ async def test_stub_get_returns_canonical_model(adapter: PravoAdapter) -> None:
     # Verify dates
     assert doc.publish_date is not None, "Publish date is missing"
     assert doc.valid_from is not None, "Valid from date is missing"
-    assert doc.ingest_date is not None, "Ingest date is missing"
+    assert doc.created_at is not None, "Created at is missing"
 
     # Verify legal status
     assert doc.legal_status is not None, "Legal status is missing"

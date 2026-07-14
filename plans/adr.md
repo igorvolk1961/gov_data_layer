@@ -803,3 +803,224 @@ class DocStructSplitter:
 - Фиксированные документы позволяют проверить корректность ответов
 - Production-режим реализуется как надстройка над stub
 - Переключение через config без изменения кода
+
+---
+
+## 10. ORM не нужен — raw SQL + Repository достаточно
+
+**Дата:** 2026-07-14
+
+### Проблема
+
+В проекте возник вопрос о необходимости внедрения ORM (SQLAlchemy, Tortoise, SQLModel) для persistence-слоя. Текущая реализация использует raw SQL через [`DatabaseClient`](core/persistence/db_client.py) (asyncpg) и паттерн Repository.
+
+### Решение
+
+ORM **не нужен**. Текущая архитектура (DatabaseClient + Repository + Pydantic) — правильный выбор по следующим причинам:
+
+1. **Уже есть адекватная абстракция** — паттерн Repository + DatabaseClient. Добавление ORM под Repository создаст лишний слой без изменения потребительского API.
+
+2. **Сложные запросы преобладают** — upsert с `ON CONFLICT ... DO UPDATE SET ... COALESCE` ([`document_repo.py:83-134`](core/persistence/repository/document_repo.py:83)), get-or-create с whitelist-валидацией ([`reference_repo.py:191-261`](core/persistence/repository/reference_repo.py:191)), self-referencing FK для иерархии разделов ([`section_repo.py:45-72`](core/persistence/repository/section_repo.py:45)). ORM не упростит эти запросы, а в некоторых случаях (dynamic SQL) — усложнит.
+
+3. **Мало сущностей** — 10 таблиц. Overhead настройки ORM (декларация mapped-классов, relationship mapping, настройка async-движка) не окупается.
+
+4. **Двойные миграции** — проект уже использует Liquibase. Добавление Alembic (или другого ORM-мигратора) создаст два источника истины для схемы.
+
+5. **Двойные модели** — Pydantic-модели уже определены в [`core/models/models.py`](core/models/models.py). ORM потребует либо SQLModel (если переходить на него целиком), либо отдельные mapped-классы, что нарушит DRY.
+
+6. **Производительность** — raw asyncpg даёт предсказуемую производительность без сюрпризов. ORM добавит ~5-10% overhead на генерацию SQL и маппинг.
+
+7. **asyncpg уже используется** — проект уже зависит от asyncpg. Добавление SQLAlchemy async (через `greenlet` или `asyncio`) — это ещё одна тяжёлая зависимость.
+
+### Что улучшаем без ORM
+
+Вместо внедрения ORM добавляем хелперы в [`DatabaseClient`](core/persistence/db_client.py):
+
+| Хелпер | Назначение | Потребители |
+|---|---|---|
+| `upsert(table, data, conflict_columns)` | Generic `INSERT ... ON CONFLICT ... DO UPDATE` | Все репозитории |
+| `transaction()` | Context manager для атомарных групп запросов | `document_repo.py`, `odl_service.py` |
+| `paginated_fetch(query, limit, offset)` | Автоматическое `LIMIT/OFFSET` | `document_repo.py` |
+| `serialize_jsonb()` / `deserialize_jsonb()` | Статические методы для JSONB | `document_repo.py` |
+
+А также создаём [`ModelMapper`](core/persistence/mapper.py) — generic утилиту для Pydantic ↔ SQL маппинга, заменяющую ручной boilerplate в `section_repo.py` и `change_tracking_repo.py`.
+
+Детальный план реализации — в [`plans/persistence_helpers_plan.md`](plans/persistence_helpers_plan.md).
+
+### Рассмотренные альтернативы
+
+- **SQLAlchemy 2.0 async** — отклонено: тяжеловесный, сложный async setup (greenlet), конфликт миграций (Alembic vs Liquibase), двойные модели
+- **SQLModel** — отклонено: молодой, ограниченная поддержка сложных запросов, нет async в ранних версиях
+- **Tortoise ORM** — отклонено: нет поддержки `ON CONFLICT`, меньше комьюнити
+- **GINO / Piccolo** — отклонено: GINO архивирован, Piccolo — малый adoption
+
+### Последствия
+
+- Экономия на зависимостях: не добавляем SQLAlchemy (~5MB) или Tortoise
+- Единый источник истины для схемы: Liquibase, не Alembic
+- Единый источник истины для моделей: Pydantic, не ORM-классы
+- Предсказуемая производительность: raw asyncpg без overhead ORM
+- ~500 строк хелперов вместо ~5000 строк ORM-конфигурации
+- При росте проекта до 30+ таблиц вопрос ORM может быть пересмотрен
+
+---
+
+## 16. Persistence-слой: in-process библиотека, а не отдельный контейнер
+
+**Дата:** 2026-07-14
+
+### Проблема
+
+Persistence-слой (DatabaseClient + 4 репозитория + Liquibase миграции) встроен в `app` контейнер как Python-пакет `core.persistence`. Возможна альтернатива — выделить его в отдельный микросервис с REST/gRPC API.
+
+### Контекст
+
+- PostgreSQL (`metadata-db`) уже работает как отдельный контейнер в [`docker-compose.yml`](docker-compose.yml:77)
+- Liquibase для миграций — отдельный init-контейнер
+- Persistence используется **только** `ODLService` — других потребителей нет
+- Репозитории: ~1200 строк кода, 10 таблиц
+- Graceful degradation уже реализован: [`ODLService`](core/odl_service.py:130-131) работает без БД
+
+### Решение
+
+Persistence-слой остаётся **in-process библиотекой** в составе `app` контейнера.
+
+**Архитектура:**
+
+```mermaid
+flowchart LR
+    subgraph app_container
+        ODLService --> Persistence
+        Persistence --> DatabaseClient
+    end
+    DatabaseClient -->|asyncpg| metadata_db[(PostgreSQL)]
+    liquibase -->|init| metadata_db
+```
+
+### Рассмотренные альтернативы
+
+1. **Отдельный persistence-сервис (REST/gRPC)** — отклонено:
+   - Нет потребителей вне ODLService — сетевой API не даёт выигрыша
+   - Два сетевых hop вместо одного (app → persistence → PostgreSQL) — ухудшение latency
+   - Новые точки отказа: сеть, DNS, HTTP/gRPC таймауты
+   - Overhead отдельного сервиса (API-контракт, аутентификация, CI/CD) превышает размер самого persistence-слоя (~1200 строк)
+   - Транзакционная целостность сложнее (нужен distributed transaction или saga)
+
+2. **Отдельный Python package (`gov-persistence`)** — отложено:
+   - Имеет смысл, когда появится второй потребитель (например, отдельный ingest-worker)
+   - На текущем этапе — преждевременная декомпозиция
+
+### Последствия
+
+- Persistence остаётся частью `app` контейнера (см. [`plans/container.md`](plans/container.md))
+- При появлении второго потребителя — выделить `core.persistence` в отдельный Python package
+- Container diagram не требует изменений
+
+---
+
+## 17. Обработка отказа БД: fail-fast на старте, graceful degradation в API, Circuit Breaker в инжесте
+
+**Дата:** 2026-07-14
+
+### Проблема
+
+Методы `_persist_document` в [`ODLService`](core/odl_service.py:136) и [`PravoAdapterBase`](adapters/pravo/adapter/base.py:425) содержали паттерн `if self._db is None: return` — silent skip без логирования. Это приводило к трём проблемам:
+
+1. **Misconfiguration не диагностируется.** Если БД ожидалась, но не передана в конструктор — ни ошибки, ни предупреждения.
+2. **Противоречие с docstring.** Методы декларировали «persistence is mandatory — errors propagate to the caller», но на практике silently возвращали `None`.
+3. **Отсутствие различения контекстов.** Поведение при недоступности БД должно различаться: при старте — fail fast, при запросе агента — graceful degradation, при инжесте — Circuit Breaker.
+
+### Контекст
+
+- Система поддерживает опциональный `DatabaseClient` в конструкторе `ODLService` и `PravoAdapterBase`
+- `get_document_detail` вызывает `_persist_document` как side-effect — ошибка БД не должна ломать ответ агенту
+- Ingest-путь (`PravoAdapterBase._persist_document`) вызывается из фоновых процессов, где retry с backoff более уместен, чем graceful degradation
+- `CircuitBreaker` уже реализован в [`adapters/base/circuit_breaker.py`](adapters/base/circuit_breaker.py) для внешних API, но не использовался для БД
+
+### Решение
+
+Ввести трёхуровневую стратегию обработки недоступности БД:
+
+#### 1. Startup healthcheck (fail-fast)
+
+В [`core/main.py`](core/main.py) — `_run_server()`:
+
+```
+if db is not None:
+    await db.connect()  # fail-fast на старте
+```
+
+Если `database_url` указан в конфиге, но PostgreSQL недоступен — сервер не стартует. `logger.critical` + `sys.exit(1)`.
+
+#### 2. Graceful degradation в API (get_document_detail)
+
+В [`core/odl_service.py`](core/odl_service.py) — `get_document_detail()`:
+
+```python
+try:
+    await self._persist_document(doc, source_id, toc)
+except Exception:
+    logger.exception(...)
+    with self.tracer.trace("persistence.failed") as span:
+        span.set_input(...)
+        span.set_error()
+```
+
+Ошибка БД логируется + пишется в tracer, но **не прерывает** ответ агента. Агент получает `DocumentDetail` с полными данными, но без гарантии персистентности.
+
+#### 3. Circuit Breaker в инжесте
+
+В [`adapters/pravo/adapter/base.py`](adapters/pravo/adapter/base.py) — `PravoAdapterBase._persist_document()`:
+
+```python
+if not self._persistence_cb.can_request():
+    raise PersistenceUnavailableError(...)
+
+try:
+    # ... persistence logic ...
+    self._persistence_cb.record_success()
+except Exception:
+    self._persistence_cb.record_failure()
+    raise
+```
+
+Параметры: `failure_threshold=3`, `recovery_timeout=30s`. После 3 последовательных failures — OPEN, быстрый отказ (raise) без запроса к БД.
+
+#### Замена `if self._db is None: return`
+
+В обоих `_persist_document` silent return заменён на:
+
+```python
+if self._db is None:
+    logger.warning("Database not configured — skipping persistence for document %s", doc.id)
+    return
+```
+
+Это defensive coding — при корректной конфигурации этот путь не выполняется (healthcheck не пропустит).
+
+#### Новая ошибка
+
+Добавлена [`PersistenceUnavailableError`](core/errors/errors.py) (code: `PERSISTENCE_UNAVAILABLE`) — для Circuit Breaker и потенциального использования в API-слое.
+
+#### Health endpoint
+
+`/health` теперь возвращает статус БД: [`"database": "connected" | "unavailable"`](core/api/rest_server.py:117).
+
+### Рассмотренные альтернативы
+
+1. **Всегда fail-fast (raise)** — отклонено. `get_document_detail` — синхронный запрос агента, ошибка БД не должна ломать ответ. Агент уже получил данные от адаптера, persistence — side-effect.
+
+2. **Всегда silent skip** — отклонено (это текущее поведение). Без логирования misconfiguration не диагностируется.
+
+3. **Queue для retry** — отложено. Имеет смысл при появлении фонового воркера для bulk-записи справочников (Task 9.5). На текущем этапе Circuit Breaker достаточен.
+
+4. **Отдельный persistence-сервис** — уже отклонено в ADR 16. Graceful degradation — ещё один аргумент против: при недоступности отдельного сервиса теряется и document retrieval, и persistence. При in-process библиотеке — теряется только persistence.
+
+### Последствия
+
+- **Старт**: fail-fast — сервер не стартует без PostgreSQL, если он настроен
+- **API (get_document_detail)**: graceful degradation — ответ возвращается, ошибка в tracer
+- **Инжест**: Circuit Breaker (3 failures → OPEN, retry через 30s)
+- **Healthcheck**: статус БД в `/health`
+- **Docstring**: убраны упоминания «опциональности» персистентности — persistence mandatory when configured
+- **Тесты**: 460 unit-тестов проходят без изменений (StubAdapter не использует БД)
