@@ -68,6 +68,14 @@ class OCRConfig:
 
 
 @dataclass
+class EmbeddingConfig:
+    """Embedding model configuration."""
+
+    model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    vector_size: int = 384
+
+
+@dataclass
 class ServerConfig:
     """Server configuration."""
 
@@ -100,6 +108,7 @@ class AppConfig:
 
     server: ServerConfig = field(default_factory=ServerConfig)
     ocr: OCRConfig = field(default_factory=OCRConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
@@ -191,9 +200,17 @@ class AppConfig:
             os.getenv("DATABASE_URL", db_cfg.get("url", "sqlite:///data/official_data.db"))
         )
 
+        # --- Embedding ---
+        emb_cfg = cfg.get("embedding", {})
+        embedding = EmbeddingConfig(
+            model=str(emb_cfg.get("model", "paraphrase-multilingual-MiniLM-L12-v2")),
+            vector_size=int(emb_cfg.get("vector_size", 384)),
+        )
+
         return cls(
             server=server,
             ocr=ocr,
+            embedding=embedding,
             observability=observability,
             qdrant_host=qdrant_host,
             qdrant_port=qdrant_port,
@@ -225,6 +242,7 @@ def reload_config(config_path: str | None = None) -> AppConfig:
 __all__ = [
     "AppConfig",
     "ConfigError",
+    "EmbeddingConfig",
     "OCRConfig",
     "ObservabilityConfig",
     "ServerConfig",

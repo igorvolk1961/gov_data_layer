@@ -130,8 +130,7 @@ class OfficialDocument(BaseModel):
     )
     organization: str | None = Field(
         default=None,
-        description="Орган, принявший документ. Скалярное значение — один орган. "
-        "Пример: 'Минюст России'",
+        description="Орган, принявший документ. Пример: 'Минюст России'",
     )
     organization_id: str | None = Field(
         default=None,
@@ -408,3 +407,21 @@ class TocNode(BaseModel):
     parent_id: str = Field(description="ID родительского раздела")
     level: int = Field(ge=0, description="Уровень вложенности (0 = корень)")
     child_count: int = Field(default=0, description="Количество дочерних разделов")
+
+
+class DocumentChunk(BaseModel):
+    """Чанк документа для хранения в Qdrant.
+
+    Содержит текст, эмбеддинг, section_path и метаданные связей
+    с записями в PostgreSQL (doc_uuid, section_uuids).
+    """
+
+    id: str = Field(description="UUID чанка (point id в Qdrant)")
+    document_id: str = Field(description="ID документа (source_id-publish_id)")
+    doc_uuid: str = Field(description="UUID документа в PostgreSQL")
+    text: str = Field(description="Текст чанка")
+    embedding: list[float] | None = Field(default=None, description="Вектор эмбеддинга")
+    section_path: list[str] = Field(default_factory=list, description="Путь по разделам")
+    section_external_ids: list[str] = Field(default_factory=list, description="Внешние ID разделов")
+    section_uuids: list[str] = Field(default_factory=list, description="UUID разделов в PostgreSQL")
+    chunk_index: int = Field(default=0, ge=0, description="Порядковый номер чанка")

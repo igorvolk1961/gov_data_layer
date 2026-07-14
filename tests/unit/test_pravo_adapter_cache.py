@@ -55,18 +55,18 @@ class TestGetStaleCached:
     """_get_stale_cached() helper method."""
 
     def test_returns_none_when_cache_empty(self) -> None:
-        adapter = PravoAdapter(mode="production")
+        adapter = PravoAdapter(mode="stub")
         assert adapter._get_stale_cached("pravo-nonexistent") is None
 
     def test_returns_document_when_fresh(self, sample_document: OfficialDocument) -> None:
-        adapter = PravoAdapter(mode="production")
+        adapter = PravoAdapter(mode="stub")
         doc_id = "pravo-0001202012230060"
         adapter._document_cache[doc_id] = (sample_document, datetime.now(timezone.utc))
         result = adapter._get_stale_cached(doc_id)
         assert result is sample_document
 
     def test_returns_none_when_expired(self, sample_document: OfficialDocument) -> None:
-        adapter = PravoAdapter(mode="production")
+        adapter = PravoAdapter(mode="stub")
         doc_id = "pravo-0001202012230060"
         # Cache entry older than TTL
         old_time = datetime.now(timezone.utc) - timedelta(seconds=_STALE_CACHE_TTL + 1)
@@ -78,7 +78,7 @@ class TestGetStaleCached:
 
     def test_removes_expired_entry(self, sample_document: OfficialDocument) -> None:
         """Expired entries are evicted from the cache dict."""
-        adapter = PravoAdapter(mode="production")
+        adapter = PravoAdapter(mode="stub")
         doc_id = "pravo-0001202012230060"
         old_time = datetime.now(timezone.utc) - timedelta(seconds=_STALE_CACHE_TTL + 10)
         adapter._document_cache[doc_id] = (sample_document, old_time)
@@ -87,7 +87,7 @@ class TestGetStaleCached:
 
     def test_keeps_fresh_entry(self, sample_document: OfficialDocument) -> None:
         """Fresh entries remain in the cache dict after access."""
-        adapter = PravoAdapter(mode="production")
+        adapter = PravoAdapter(mode="stub")
         doc_id = "pravo-0001202012230060"
         adapter._document_cache[doc_id] = (sample_document, datetime.now(timezone.utc))
         adapter._get_stale_cached(doc_id)
@@ -95,7 +95,7 @@ class TestGetStaleCached:
 
     def test_entry_at_ttl_boundary_is_fresh(self, sample_document: OfficialDocument) -> None:
         """Entry at exactly TTL boundary is still considered fresh (age > TTL is expired)."""
-        adapter = PravoAdapter(mode="production")
+        adapter = PravoAdapter(mode="stub")
         doc_id = "pravo-0001202012230060"
         # Use a small epsilon to ensure age < TTL even with execution delay
         epsilon = 0.001  # 1ms
@@ -114,7 +114,7 @@ class TestGetStaleCacheFallback:
         self, sample_document: OfficialDocument, mock_tracer: MagicMock
     ) -> None:
         """When API raises SourceUnavailableError and stale cache exists, return it."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         doc_id = "pravo-0001202012230060"
         publish_id = "0001202012230060"
 
@@ -135,7 +135,7 @@ class TestGetStaleCacheFallback:
     @pytest.mark.asyncio
     async def test_raises_when_no_stale_cache(self, mock_tracer: MagicMock) -> None:
         """When API raises SourceUnavailableError and no stale cache, re-raise."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         doc_id = "pravo-0001202012230060"
 
         # Mock client to raise SourceUnavailableError
@@ -155,7 +155,7 @@ class TestGetStaleCacheFallback:
         self, sample_document: OfficialDocument, mock_tracer: MagicMock
     ) -> None:
         """When stale cache exists but is expired, re-raise SourceUnavailableError."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         doc_id = "pravo-0001202012230060"
 
         # Pre-populate expired stale cache
@@ -178,7 +178,7 @@ class TestGetStaleCacheFallback:
         self, sample_document: OfficialDocument, mock_tracer: MagicMock
     ) -> None:
         """After a successful API call, the document is cached."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         doc_id = "pravo-0001202012230060"
         publish_id = "0001202012230060"
 
@@ -201,7 +201,7 @@ class TestGetStaleCacheFallback:
         self, sample_document: OfficialDocument, mock_tracer: MagicMock
     ) -> None:
         """When API succeeds, stale cache is not used."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         doc_id = "pravo-0001202012230060"
         publish_id = "0001202012230060"
 
@@ -239,7 +239,7 @@ class TestGetStaleCacheFallback:
     @pytest.mark.asyncio
     async def test_circuit_state_in_error_message(self, mock_tracer: MagicMock) -> None:
         """Error message includes circuit state when no stale cache."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         doc_id = "pravo-0001202012230060"
 
         # Mock client to raise SourceUnavailableError

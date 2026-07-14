@@ -47,7 +47,7 @@ class TestEnsureCachesPopulated:
     @pytest.mark.asyncio
     async def test_populates_caches_on_first_call(self, mock_tracer: MagicMock) -> None:
         """On first call, fetches blocks, categories, authorities, doc types."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         assert adapter._cache_populated_at is None
 
         # Mock client responses
@@ -89,7 +89,7 @@ class TestEnsureCachesPopulated:
     @pytest.mark.asyncio
     async def test_skips_when_still_fresh(self, mock_tracer: MagicMock) -> None:
         """If caches were populated recently, skip the API calls."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         adapter._cache_populated_at = __import__("datetime").datetime.now(
             __import__("datetime").timezone.utc
         )
@@ -104,7 +104,7 @@ class TestEnsureCachesPopulated:
     @pytest.mark.asyncio
     async def test_handles_api_unavailable(self, mock_tracer: MagicMock) -> None:
         """When API is unavailable, log warning and don't update timestamp."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         assert adapter._cache_populated_at is None
 
         adapter._pravo_client.get_public_blocks = AsyncMock(
@@ -119,7 +119,7 @@ class TestEnsureCachesPopulated:
     @pytest.mark.asyncio
     async def test_handles_empty_blocks(self, mock_tracer: MagicMock) -> None:
         """When API returns empty blocks list, skip further fetches."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
 
         adapter._pravo_client.get_public_blocks = AsyncMock(return_value=[])
 
@@ -132,7 +132,7 @@ class TestEnsureCachesPopulated:
     @pytest.mark.asyncio
     async def test_handles_empty_categories(self, mock_tracer: MagicMock) -> None:
         """When API returns empty categories list, skip authority fetch."""
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
 
         adapter._pravo_client.get_public_blocks = AsyncMock(
             return_value=[{"id": "block1", "name": "Block 1"}]
@@ -157,7 +157,7 @@ class TestGetOcrProvider:
     def test_returns_injected_provider(self, mock_tracer: MagicMock) -> None:
         """When ocr_provider is injected via constructor, return it directly."""
         mock_ocr = MagicMock()
-        adapter = PravoAdapter(mode="production", ocr_provider=mock_ocr, tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", ocr_provider=mock_ocr, tracer=mock_tracer)
         result = adapter._get_ocr_provider()
         assert result is mock_ocr
 
@@ -170,7 +170,7 @@ class TestGetOcrProvider:
         mock_config.ocr.provider = "__nonexistent__"
         mock_get_config.return_value = mock_config
 
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         result = adapter._get_ocr_provider()
         assert result is None
 
@@ -183,7 +183,7 @@ class TestGetOcrProvider:
         mock_config.ocr.provider = "stub"
         mock_get_config.return_value = mock_config
 
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         result = adapter._get_ocr_provider()
 
         assert result is not None
@@ -201,7 +201,7 @@ class TestGetOcrProvider:
         mock_config.ocr.tesseract_timeout = 120
         mock_get_config.return_value = mock_config
 
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         result = adapter._get_ocr_provider()
 
         assert result is not None
@@ -218,7 +218,7 @@ class TestGetOcrProvider:
         mock_config.ocr.yandex_vision_timeout = 60
         mock_get_config.return_value = mock_config
 
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         result = adapter._get_ocr_provider()
 
         assert result is not None
@@ -233,7 +233,7 @@ class TestGetOcrProvider:
         mock_config.ocr.provider = "unknown_provider"
         mock_get_config.return_value = mock_config
 
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         result = adapter._get_ocr_provider()
         assert result is None
 
@@ -246,7 +246,7 @@ class TestGetOcrProvider:
         mock_config.ocr.provider = "stub"
         mock_get_config.return_value = mock_config
 
-        adapter = PravoAdapter(mode="production", tracer=mock_tracer)
+        adapter = PravoAdapter(mode="stub", tracer=mock_tracer)
         result1 = adapter._get_ocr_provider()
         result2 = adapter._get_ocr_provider()
 
@@ -286,6 +286,9 @@ class TestIngestProduction:
         mock_doc2.id = "pravo-doc2"
         adapter._parser.parse_search_result = MagicMock(side_effect=[mock_doc1, mock_doc2])
 
+        # Mock get_content to avoid needing OCR/PDF download during ingest
+        adapter.get_content = AsyncMock(return_value="test text")
+
         count = await adapter.ingest()
 
         assert count == 2
@@ -322,6 +325,9 @@ class TestIngestProduction:
             side_effect=[mock_doc1, ValueError("Bad data"), mock_doc3]
         )
 
+        # Mock get_content to avoid needing OCR/PDF download during ingest
+        adapter.get_content = AsyncMock(return_value="test text")
+
         count = await adapter.ingest()
 
         # Should have skipped the bad item
@@ -330,6 +336,7 @@ class TestIngestProduction:
         assert "pravo-doc3" in adapter._document_cache
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_ingest_returns_zero_on_api_unavailable(self, mock_tracer: MagicMock) -> None:
         """When API is unavailable, ingest returns 0 gracefully."""
         adapter = PravoAdapter(mode="production", tracer=mock_tracer)
@@ -344,6 +351,7 @@ class TestIngestProduction:
         assert count == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_ingest_handles_empty_response(self, mock_tracer: MagicMock) -> None:
         """When API returns no items, ingest returns 0."""
         adapter = PravoAdapter(mode="production", tracer=mock_tracer)

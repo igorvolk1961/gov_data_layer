@@ -35,7 +35,7 @@ echo.
 echo ========================================
 echo [4/4] pytest (without 35-page PDF)
 echo ========================================
-uv run pytest ./tests -k "not test_yandex_vision_multi_page_pdf" --tb=short -q || (
+uv run pytest ./tests -k "not slow" --tb=short -q || (
     echo [ERROR] pytest завершился с ошибкой
     exit /b 1
 )

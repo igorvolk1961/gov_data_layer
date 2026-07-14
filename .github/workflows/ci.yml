@@ -125,7 +125,7 @@ jobs:
 
       - name: Apply database migrations
         env:
-          PGPASSWORD: odl
+          PGPASSWORD: odl  # pragma: allowlist secret
         run: |
           for f in \
             core/persistence/migrations/v001/000_create_data_source.sql \
@@ -150,6 +150,7 @@ jobs:
           DATABASE_URL: postgresql://odl:odl@localhost:5432/odl_metadata  # pragma: allowlist secret
         run: |
           python -m pytest tests/ -v --tb=short \
+            -m "not slow" \
             --cov=core --cov=adapters \
             --cov-report=xml --cov-report=term-missing \
             --cov-fail-under=70

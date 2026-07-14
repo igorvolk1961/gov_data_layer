@@ -31,6 +31,7 @@ def adapter() -> PravoAdapter:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_stub_ingest_fetches_all_documents(adapter: PravoAdapter) -> None:
     """Ingest should fetch all documents from _STUB_PUBLISH_IDS_INITIAL.
 
@@ -171,6 +172,7 @@ async def test_stub_get_raises_not_found_for_missing_document(
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_stub_ingest_populates_cache(adapter: PravoAdapter) -> None:
     """After ingest, all documents should be in the adapter's cache."""
     count = await adapter.ingest()

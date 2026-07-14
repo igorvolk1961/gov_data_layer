@@ -1,8 +1,16 @@
-"""Ingest — stub for Phase 3."""
+"""Ingest — document ingestion pipeline.
 
-from __future__ import annotations  # pragma: no cover
+Components:
+- DocStructSplitter: structural chunking for Russian official documents
+- Embedder: text embedding using sentence-transformers
+"""
 
-# TODO: Phase 3 — implement ingest worker:
-#   - Periodic background loading by TTL
-#   - Download → normalize → write to index pipeline
-#   - Error handling and retry logic
+from __future__ import annotations
+
+from core.ingest.chunker import DocStructSplitter
+from core.ingest.embedder import Embedder
+
+__all__ = [
+    "DocStructSplitter",
+    "Embedder",
+]

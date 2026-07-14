@@ -3,6 +3,7 @@
 from core.models.models import (
     Citation,
     ConfidenceSignals,
+    DocumentChunk,
     DocumentDetail,
     LegalStatus,
     OfficialDocument,
@@ -18,6 +19,7 @@ from core.models.models import (
 __all__ = [
     "Citation",
     "ConfidenceSignals",
+    "DocumentChunk",
     "DocumentDetail",
     "LegalStatus",
     "OfficialDocument",

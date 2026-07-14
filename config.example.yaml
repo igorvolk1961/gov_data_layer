@@ -28,6 +28,11 @@ ocr:
     timeout: 120                # Yandex OCR API timeout (seconds)
     folder_id: ""               # Yandex Cloud folder ID (can also be set via OCR_YA_FOLDER_ID in .env)
 
+# === Embedding Model ===
+embedding:
+  model: "paraphrase-multilingual-MiniLM-L12-v2"
+  vector_size: 384
+
 # === Vector Search (Qdrant) ===
 qdrant:
   host: "localhost"
@@ -40,7 +45,7 @@ redis:
 
 # === Database (PostgreSQL) ===
 database:
-  url: "postgresql://odl:odl@localhost:5432/odl_metadata"
+  url: "postgresql://user:pass@localhost:5432/odl_metadata"  # pragma: allowlist secret
 
 # === Observability ===
 observability:

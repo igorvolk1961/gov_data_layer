@@ -528,10 +528,10 @@ The following stubs exist in files created or modified in this phase:
 
 ### Scenario 1: Pravo.gov.ru is Available — Full Production Flow
 
-**Goal:** When `mode="production"` and pravo.gov.ru responds, the adapter fetches real data, parses it, caches it, and returns proper models.
+**Goal:** When `mode="stub"` and pravo.gov.ru responds, the adapter fetches real data, parses it, caches it, and returns proper models.
 
 **What needs to happen:**
-1. `PravoAdapter.__init__()` with `mode="production"` creates real `PravoClient` and `PravoParser`
+1. `PravoAdapter.__init__()` with `mode="stub"` creates real `PravoClient` and `PravoParser`
 2. `search()` calls `PravoClient.search_documents()` → `PravoParser.parse_search_results()`
 3. `get()` calls `PravoClient.get_document()` → `PravoParser.parse_document_detail()` → cache result in `_document_cache`
 4. `list_topics()` calls `PravoClient.get_public_blocks()` → `PravoParser.parse_topics()`

@@ -21,7 +21,6 @@ from adapters.pravo.adapter.base import PravoAdapterBase
 from adapters.pravo.adapter.handlers import (
     BaseGetContentHandler,
     BaseGetHandler,
-    BaseGetTocHandler,
     BaseIngestHandler,
     BaseListTopicsHandler,
     BaseSearchHandler,
@@ -36,7 +35,6 @@ from adapters.pravo.adapter.production import (
 from adapters.pravo.adapter.stub import (
     StubGetContentHandler,
     StubGetHandler,
-    StubGetTocHandler,
     StubIngestHandler,
     StubListTopicsHandler,
     StubSearchHandler,
@@ -112,7 +110,6 @@ class PravoAdapter(PravoAdapterBase):
         self._ingest_handler: BaseIngestHandler
         self._list_topics_handler: BaseListTopicsHandler
         self._get_content_handler: BaseGetContentHandler
-        self._get_toc_handler: BaseGetTocHandler
 
         self._build_handlers()
 
@@ -129,14 +126,12 @@ class PravoAdapter(PravoAdapterBase):
             self._ingest_handler = StubIngestHandler(self)
             self._list_topics_handler = StubListTopicsHandler(self)
             self._get_content_handler = StubGetContentHandler(self)
-            self._get_toc_handler = StubGetTocHandler(self)
         else:
             self._search_handler = ProductionSearchHandler(self)
             self._get_handler = ProductionGetHandler(self)
             self._ingest_handler = ProductionIngestHandler(self)
             self._list_topics_handler = ProductionListTopicsHandler(self)
             self._get_content_handler = ProductionGetContentHandler(self)
-            self._get_toc_handler = StubGetTocHandler(self)  # No production TOC yet
 
     # ----- SourceAdapter Protocol Methods -----
 
@@ -191,9 +186,10 @@ class PravoAdapter(PravoAdapterBase):
     ) -> list[TocNode]:
         """Get document table of contents.
 
-        Delegates to the mode-specific get_toc handler.
+        Mode-independent — uses TocMixin.get_toc() which calls
+        extract_toc_from_text() from adapters/base/toc_extractor.py.
         """
-        return await self._get_toc_handler.get_toc(
+        return await super().get_toc(
             document_id,
             parent_section_id=parent_section_id,
             query=query,

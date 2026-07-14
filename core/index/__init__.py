@@ -1,8 +1,13 @@
-"""Index — stub for Phase 4."""
+"""Index — vector storage layer.
 
-from __future__ import annotations  # pragma: no cover
+Components:
+- QdrantStore: vector storage in Qdrant with payload filtering
+"""
 
-# TODO: Phase 4 — implement index layer:
-#   - Qdrant: vector collection with embeddings (sentence-transformers)
-#   - SQLite: hierarchical rubricator (topics, regions, authorities)
-#   - Hybrid search: vector + payload filtering + SQL hierarchy
+from __future__ import annotations
+
+from core.index.qdrant_store import QdrantStore
+
+__all__ = [
+    "QdrantStore",
+]

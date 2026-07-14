@@ -1,12 +1,12 @@
 """StubIngestHandler — ingest documents via real HTTP for fixed publish_ids.
 
-In stub mode, the handler fetches each document from the real pravo.gov.ru
-API using the fixed list of publish_ids defined in _data.py. This ensures
-the full pipeline (HTTP → parse → model) is exercised even in stub mode.
+Fetches each document from the real API, then runs the shared pipeline:
+metadata → OCR → TOC → chunk → embed → Qdrant.
 """
 
 from __future__ import annotations
 
+from adapters.base.ingest_pipeline import process_document_text
 from adapters.pravo.adapter.handlers import BaseIngestHandler
 from adapters.pravo.adapter.stub._data import _STUB_PUBLISH_IDS_INITIAL
 from core.observability.logger import get_logger
@@ -17,20 +17,18 @@ logger = get_logger(__name__)
 class StubIngestHandler(BaseIngestHandler):
     """Ingest documents from the fixed stub publish_id list.
 
-    For each publish_id in _STUB_PUBLISH_IDS_INITIAL, this handler
-    calls adapter.get() which makes a real HTTP request to pravo.gov.ru,
-    parses the response, and caches the result.
+    Uses real API calls for metadata and OCR, then runs the shared
+    pipeline (chunk → embed → Qdrant) — same as production mode.
     """
 
     async def ingest(self) -> int:
-        """Fetch all stub documents from the real API.
+        """Fetch all stub documents and run the full pipeline.
 
         Iterates over _STUB_PUBLISH_IDS_INITIAL, calls adapter.get()
-        for each one, and returns the count of successfully fetched
-        documents.
+        for each one, runs OCR, chunks, embeds, and stores in Qdrant.
 
         Returns:
-            Number of documents successfully ingested.
+            Number of documents successfully processed.
         """
         adapter = self._adapter
         with adapter.tracer.trace(
@@ -43,22 +41,36 @@ class StubIngestHandler(BaseIngestHandler):
             for publish_id in _STUB_PUBLISH_IDS_INITIAL:
                 document_id = f"pravo-{publish_id}"
                 try:
-                    # This calls StubGetHandler.get() which does real HTTP + parse
+                    # 1. Get metadata (also persists to DB via _persist_document)
                     await adapter.get(document_id)  # type: ignore[attr-defined]
+
+                    # 2. Get doc_uuid from DB
+                    doc_repo = adapter._doc_repo_lazy
+                    doc_uuid = ""
+                    if doc_repo is not None:
+                        db_doc = await doc_repo.get_document_by_publish_id(publish_id)
+                        if db_doc:
+                            doc_uuid = db_doc.id
+
+                    # 3. Get text via OCR (from cache in stub mode)
+                    text = await adapter.get_content(document_id)  # type: ignore[attr-defined]
+
+                    # 4. Run shared pipeline: chunk → embed → Qdrant
+                    await process_document_text(text, document_id, doc_uuid)
+
                     count += 1
-                    logger.info("Ingested document '%s'", document_id)
+                    logger.info("Processed document '%s' through pipeline", document_id)
                 except Exception as exc:
-                    logger.error("Failed to ingest document '%s': %s", document_id, exc)
+                    logger.error("Failed to process document '%s': %s", document_id, exc)
                     errors.append(str(exc))
 
             span.set_output({"count": count, "errors": errors})
             if errors:
                 logger.warning(
-                    "Ingest completed with %d/%d successes, %d errors: %s",
+                    "Ingest completed with %d/%d successes, %d errors",
                     count,
                     len(_STUB_PUBLISH_IDS_INITIAL),
                     len(errors),
-                    errors,
                 )
             return count
 

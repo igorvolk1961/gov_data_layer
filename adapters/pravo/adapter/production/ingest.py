@@ -1,9 +1,14 @@
-"""ProductionIngestHandler — production ingest via pravo.gov.ru API."""
+"""ProductionIngestHandler — production ingest via pravo.gov.ru API.
+
+Fetches documents from API, then runs the shared pipeline:
+metadata → OCR → TOC → chunk → embed → Qdrant.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from adapters.base.ingest_pipeline import process_document_text
 from adapters.pravo.adapter.constants import _INGEST_PAGE_SIZE
 from adapters.pravo.adapter.handlers import BaseIngestHandler
 from core.errors import SourceUnavailableError
@@ -18,18 +23,18 @@ class ProductionIngestHandler(BaseIngestHandler):
     async def ingest(self) -> int:
         """Ingest documents in production mode.
 
-        Fetches recent documents via API, parses them, and caches.
+        Full pipeline: fetch metadata → cache → persist to DB →
+        OCR → TOC → chunk → embed → Qdrant.
 
         Returns:
-            Number of ingested documents.
+            Number of successfully ingested documents.
         """
         adapter = self._adapter
         with adapter.tracer.trace(
             "pravo.ingest",
             source_id=adapter.source_id,
-            mode="production",
+            mode="stub",
         ) as span:
-            # Production: fetch recent documents via API
             await adapter._ensure_caches_populated()
             try:
                 result = await adapter._pravo_client.search_documents(
@@ -40,24 +45,47 @@ class ProductionIngestHandler(BaseIngestHandler):
                 for raw in items:
                     try:
                         doc = adapter._parser.parse_search_result(raw)
-                        adapter._document_cache[doc.id] = (doc, datetime.now(timezone.utc))
+                        document_id = doc.id
+                        adapter._document_cache[document_id] = (doc, datetime.now(timezone.utc))
+
+                        # Persist to DB and get doc_uuid
+                        await adapter._persist_document(doc)
+                        doc_uuid = (
+                            await self._get_doc_uuid(doc.publish_id) if doc.publish_id else ""
+                        )
+
+                        # Get text via OCR
+                        text = await adapter.get_content(document_id)  # type: ignore[attr-defined]
+
+                        # Run shared pipeline: chunk → embed → Qdrant
+                        await process_document_text(text, document_id, doc_uuid)
+
                         count += 1
                     except (ValueError, KeyError, TypeError) as exc:
-                        logger.warning("Failed to parse ingest item: %s", exc)
+                        logger.warning("Failed to process ingest item: %s", exc)
                         continue
+                    except Exception as exc:
+                        logger.warning("Pipeline failed for document: %s", exc)
+                        continue
+
                 span.set_output({"count": count, "mode": "production"})
                 logger.info("Ingested %d documents from pravo.gov.ru", count)
                 return count
             except SourceUnavailableError:
                 circuit_state = adapter._pravo_client.circuit_state
-                logger.warning(
-                    "Ingest failed — API unavailable (circuit: %s)",
-                    circuit_state,
-                )
+                logger.warning("Ingest failed — API unavailable (circuit: %s)", circuit_state)
                 span.set_output(
                     {"count": 0, "error": "source_unavailable", "circuit_state": circuit_state}
                 )
                 return 0
+
+    async def _get_doc_uuid(self, publish_id: str) -> str:
+        """Get document UUID from DB after persistence."""
+        doc_repo = self._adapter._doc_repo_lazy
+        if doc_repo is None:
+            return ""
+        doc = await doc_repo.get_document_by_publish_id(publish_id)
+        return doc.id if doc else ""
 
 
 __all__ = [

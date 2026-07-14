@@ -30,7 +30,7 @@ class ProductionSearchHandler(BaseSearchHandler):
         with adapter.tracer.trace(
             "pravo.search",
             source_id=adapter.source_id,
-            mode="production",
+            mode="stub",
             query=query,
         ) as span:
             span.set_input({"query": query, "context": context.model_dump() if context else None})

@@ -57,7 +57,6 @@ def _check_tesseract_available() -> bool:
 
 
 @pytest.mark.integration
-@pytest.mark.slow
 @pytest.mark.skipif(
     not _check_yandex_credentials(),
     reason="Yandex Vision credentials not configured (OCR_YA_KEY_SECRET, OCR_YA_FOLDER_ID)",
@@ -91,12 +90,12 @@ async def test_yandex_vision_real_pdf() -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.slow
 @pytest.mark.skipif(
     not _check_yandex_credentials(),
     reason="Yandex Vision credentials not configured",
 )
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_yandex_vision_multi_page_pdf() -> None:
     """Распознавание многостраничного PDF (35 страниц) через Yandex Vision.
 
@@ -134,7 +133,6 @@ async def test_yandex_vision_multi_page_pdf() -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.slow
 @pytest.mark.skipif(
     not _check_tesseract_available(),
     reason="Tesseract OCR engine not installed on this system",
@@ -162,7 +160,6 @@ async def test_tesseract_fallback_real_pdf() -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.slow
 @pytest.mark.asyncio
 async def test_ocr_with_fallback() -> None:
     """Интеграционный тест: Yandex Vision с fallback на Tesseract.

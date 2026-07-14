@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from adapters.base import RSSAdapter
 from adapters.base.circuit_breaker import CircuitBreaker
+from adapters.base.toc_mixin import TocMixin
 from adapters.pravo.adapter.constants import (
     _CACHE_POPULATE_TTL,
     _STALE_CACHE_TTL,
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class PravoAdapterBase(RSSAdapter):
+class PravoAdapterBase(RSSAdapter, TocMixin):
     """Base adapter class for pravo.gov.ru data source.
 
     Provides shared logic: constructor, cache management, resource lifecycle,
@@ -121,23 +122,33 @@ class PravoAdapterBase(RSSAdapter):
 
     async def get_toc(
         self,
-        _document_id: str,
-        _parent_section_id: str | None = None,
-        _query: str = "",
+        document_id: str,
+        parent_section_id: str | None = None,
+        query: str = "",
     ) -> list[TocNode]:
-        """Get document table of contents.
+        """Extract document structure from OCR text.
 
-        Stub — TOC extraction from PDF is not implemented at this stage.
+        Mode-independent — uses shared extract_toc_from_text() from
+        adapters/base/toc_extractor.py. Both stub and production modes
+        use this same implementation.
 
         Args:
-            _document_id: Document ID.
-            _parent_section_id: Parent section ID.
-            _query: Optional search query.
+            document_id: Document identifier.
+            parent_section_id: Optional parent section filter.
+            query: Optional search query.
 
         Returns:
-            Empty list (stub).
+            List of TocNode objects.
         """
-        return []
+        from adapters.base.toc_extractor import extract_toc_from_text
+
+        try:
+            text = await self.get_content(document_id)  # type: ignore[attr-defined]
+        except Exception:
+            logger.warning("Cannot get TOC for '%s': text extraction failed", document_id)
+            return []
+
+        return await extract_toc_from_text(text, document_id, parent_section_id, query)
 
     # ----- Resource Management -----
 

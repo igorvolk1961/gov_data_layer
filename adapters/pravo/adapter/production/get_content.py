@@ -32,7 +32,7 @@ class ProductionGetContentHandler(BaseGetContentHandler):
         with adapter.tracer.trace(
             "pravo.get_content",
             source_id=adapter.source_id,
-            mode="production",
+            mode="stub",
             document_id=document_id,
         ) as span:
             span.set_input({"document_id": document_id})
