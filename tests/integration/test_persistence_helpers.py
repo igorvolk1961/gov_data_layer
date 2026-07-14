@@ -221,10 +221,10 @@ async def test_paginated_fetch(db: DatabaseClient) -> None:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("doc_type_id")
 async def test_jsonb_serialize_deserialize_roundtrip(
     db: DatabaseClient,
     source_uuid: str,
-    doc_type_id: str,
     jurisdiction_id: str,
     region_id: str,
 ) -> None:
