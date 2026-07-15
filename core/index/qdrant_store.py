@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from core.models.models import DocumentChunk
@@ -207,6 +207,101 @@ class QdrantStore:
             ],
         )
 
+    @staticmethod
+    def _payload_to_chunk(point: Any) -> DocumentChunk:
+        """Convert a Qdrant point with payload to a DocumentChunk."""
+        payload = point.payload or {}
+        df_raw = payload.get("data_freshness")
+        data_freshness: datetime | None = None
+        if isinstance(df_raw, str):
+            with contextlib.suppress(ValueError, TypeError):
+                data_freshness = datetime.fromisoformat(df_raw)
+
+        nas_raw = payload.get("not_actual_since")
+        not_actual_since: date | None = None
+        if isinstance(nas_raw, str):
+            with contextlib.suppress(ValueError, TypeError):
+                not_actual_since = date.fromisoformat(nas_raw)
+
+        return DocumentChunk(
+            id=str(point.id),
+            document_id=str(payload.get("document_id", "")),
+            doc_uuid=str(payload.get("doc_uuid", "")),
+            text=str(payload.get("text", "")),
+            section_path=list(payload.get("section_path", [])),
+            section_external_ids=list(payload.get("section_external_ids", [])),
+            section_uuids=list(payload.get("section_uuids", [])),
+            chunk_index=int(payload.get("chunk_index", 0)),
+            section_chunk_index=int(payload.get("section_chunk_index", 0)),
+            data_freshness=data_freshness,
+            not_actual_since=not_actual_since,
+        )
+
+    async def deactivate_sections(
+        self,
+        section_uuids: list[str],
+        effective_date: date,
+    ) -> int:
+        """Set not_actual_since on all chunks belonging to given sections.
+
+        Scrolls Qdrant for chunks matching any of the section_uuids,
+        then sets not_actual_since on their payload.
+
+        Args:
+            section_uuids: List of section UUIDs to deactivate.
+            effective_date: Date from which chunks are no longer actual.
+
+        Returns:
+            Number of updated points.
+        """
+        client = await self._get_client()
+        if client is None or not section_uuids:
+            return 0
+
+        qdrant_filter = _qdrant_models.Filter(
+            should=[
+                _qdrant_models.FieldCondition(
+                    key="section_uuids",
+                    match=_qdrant_models.MatchAny(any=section_uuids),
+                ),
+            ],
+        )
+
+        # Scroll all matching points
+        point_ids: list[int | str] = []
+        offset: int | None = None
+        while True:
+            result = client.scroll(
+                collection_name=self._collection,
+                scroll_filter=qdrant_filter,
+                limit=100,
+                offset=offset,
+                with_payload=False,  # We only need IDs
+            )
+            points = result[0]
+            next_offset = result[1] if len(result) > 1 else None
+            for p in points:
+                point_ids.append(p.id)
+            if next_offset is None or next_offset == offset:
+                break
+            offset = next_offset
+
+        if not point_ids:
+            return 0
+
+        # Set not_actual_since on all matching points
+        client.set_payload(
+            collection_name=self._collection,
+            payload={"not_actual_since": effective_date.isoformat()},
+            points=point_ids,
+        )
+        logger.info(
+            "Deactivated %d chunks (not_actual_since=%s)",
+            len(point_ids),
+            effective_date.isoformat(),
+        )
+        return len(point_ids)
+
     async def search(
         self,
         query_embedding: list[float],
@@ -261,27 +356,28 @@ class QdrantStore:
             with_payload=True,
         )
 
+        # Merge default not_actual_since filter with caller-provided filters
+        default_filter = await self.build_filter()
+        if default_filter is not None:
+            if qdrant_filter is not None:
+                qdrant_filter = _qdrant_models.Filter(
+                    must=(list(qdrant_filter.must or []) + list(default_filter.must or [])),
+                    should=list(default_filter.should or []),
+                )
+            else:
+                qdrant_filter = default_filter
+
+        search_result = client.query_points(
+            collection_name=self._collection,
+            query=query_embedding,
+            query_filter=qdrant_filter,
+            limit=limit,
+            with_payload=True,
+        )
+
         results: list[tuple[DocumentChunk, float]] = []
         for scored in search_result.points:
-            payload = scored.payload or {}
-            df_raw = payload.get("data_freshness")
-            data_freshness: datetime | None = None
-            if isinstance(df_raw, str):
-                with contextlib.suppress(ValueError, TypeError):
-                    data_freshness = datetime.fromisoformat(df_raw)
-
-            chunk = DocumentChunk(
-                id=str(scored.id),
-                document_id=str(payload.get("document_id", "")),
-                doc_uuid=str(payload.get("doc_uuid", "")),
-                text=str(payload.get("text", "")),
-                section_path=list(payload.get("section_path", [])),
-                section_external_ids=list(payload.get("section_external_ids", [])),
-                section_uuids=list(payload.get("section_uuids", [])),
-                chunk_index=int(payload.get("chunk_index", 0)),
-                section_chunk_index=int(payload.get("section_chunk_index", 0)),
-                data_freshness=data_freshness,
-            )
+            chunk = self._payload_to_chunk(scored)
             results.append((chunk, scored.score))
 
         return results
@@ -330,25 +426,7 @@ class QdrantStore:
             next_offset = result[1] if len(result) > 1 else None
 
             for point in points:
-                payload = point.payload or {}
-                df_raw = payload.get("data_freshness")
-                data_freshness: datetime | None = None
-                if isinstance(df_raw, str):
-                    with contextlib.suppress(ValueError, TypeError):
-                        data_freshness = datetime.fromisoformat(df_raw)
-
-                chunk = DocumentChunk(
-                    id=str(point.id),
-                    document_id=str(payload.get("document_id", "")),
-                    doc_uuid=str(payload.get("doc_uuid", "")),
-                    text=str(payload.get("text", "")),
-                    section_path=list(payload.get("section_path", [])),
-                    section_external_ids=list(payload.get("section_external_ids", [])),
-                    section_uuids=list(payload.get("section_uuids", [])),
-                    chunk_index=int(payload.get("chunk_index", 0)),
-                    section_chunk_index=int(payload.get("section_chunk_index", 0)),
-                    data_freshness=data_freshness,
-                )
+                chunk = self._payload_to_chunk(point)
                 chunks.append(chunk)
 
             if next_offset is None or next_offset == offset:
