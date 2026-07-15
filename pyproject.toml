@@ -29,6 +29,7 @@ dependencies = [
     "PyMuPDF>=1.23.0",
     "pyyaml>=6.0.0",
     "asyncpg>=0.29.0",
+    "smart_chunker@git+https://github.com/igorvolk1961/smart_chunker.git",
 ]
 
 [project.scripts]
