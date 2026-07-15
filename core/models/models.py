@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -437,4 +437,11 @@ class DocumentChunk(BaseModel):
         default=None,
         description="Дата свежести данных чанка. Для НПА — дата вступления в силу "
         "(valid_from) документа/раздела. None если дата неизвестна.",
+    )
+    not_actual_since: date | None = Field(
+        default=None,
+        description="Дата, после которой чанк перестаёт быть актуальным. "
+        "Устанавливается при обработке документа, отменяющего/изменяющего "
+        "раздел, к которому относится чанк. По умолчанию None (актуален). "
+        "При поиске фильтр: not_actual_since IS NULL OR not_actual_since > now().",
     )

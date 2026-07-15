@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from core.models.models import DocumentChunk
@@ -123,6 +123,11 @@ class QdrantStore:
             field_name="doc_uuid",
             field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
         )
+        client.create_payload_index(
+            collection_name=self._collection,
+            field_name="not_actual_since",
+            field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
+        )
 
     async def upsert_chunks(self, chunks: list[DocumentChunk]) -> None:
         """Insert or update chunks with embeddings and payload.
@@ -156,6 +161,8 @@ class QdrantStore:
             }
             if chunk.data_freshness is not None:
                 payload["data_freshness"] = chunk.data_freshness.isoformat()
+            if chunk.not_actual_since is not None:
+                payload["not_actual_since"] = chunk.not_actual_since.isoformat()
 
             points.append(
                 _qdrant_models.PointStruct(
@@ -177,15 +184,28 @@ class QdrantStore:
 
     async def build_filter(
         self,
-    ) -> dict[str, Any] | None:
-        """Build a payload filter dict for Qdrant search.
+    ) -> _qdrant_models.Filter | None:
+        """Build a payload filter for Qdrant search.
 
         Returns:
-            Filter dict or None if no filters needed.
-            Currently returns None (all chunks), will be extended
-            for region/topic/actual filters in Phase B.
+            Filter excluding chunks that have not_actual_since <= now(),
+            or None if Qdrant models are unavailable.
         """
-        return None
+        if not _HAS_QDRANT:
+            return None
+        now_str = datetime.now(timezone.utc).date().isoformat()
+        return _qdrant_models.Filter(
+            should=[
+                _qdrant_models.FieldCondition(
+                    key="not_actual_since",
+                    is_null=_qdrant_models.IsNullCondition(is_null=True),
+                ),
+                _qdrant_models.FieldCondition(
+                    key="not_actual_since",
+                    range=_qdrant_models.Range(gt=now_str),
+                ),
+            ],
+        )
 
     async def search(
         self,
