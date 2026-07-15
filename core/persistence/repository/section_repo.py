@@ -10,12 +10,32 @@ Manages document sections (TOC nodes) with support for:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from core.models.models import TocNode
 from core.observability import get_tracer
 from core.persistence.db_client import DatabaseClient
 
-tracer = get_tracer()
+_tracer_section: Any = None  # lazy — set via _get_tracer()
+
+
+def _get_tracer() -> Any:
+    """Lazy tracer accessor — avoids RuntimeError on import before configure()."""
+    global _tracer_section
+    if _tracer_section is None:
+        try:
+            _tracer_section = get_tracer()
+        except RuntimeError:
+            from adapters.base.ingest_pipeline import _NullSpan
+
+            class _LazyTracer:
+                """Minimal no-op tracer for graceful degradation."""
+
+                def trace(self, name: str) -> _NullSpan:  # noqa: ARG002
+                    return _NullSpan()
+
+            _tracer_section = _LazyTracer()
+    return _tracer_section
 
 
 class SectionRepository:
@@ -217,7 +237,7 @@ class SectionRepository:
         Returns:
             True if the section is still actual, False otherwise.
         """
-        with tracer.trace("section_repo.is_section_actual") as span:
+        with _get_tracer().trace("section_repo.is_section_actual") as span:
             span.set_input({"section_uuid": section_uuid})
 
             # 1. Check if parent document has been revoked

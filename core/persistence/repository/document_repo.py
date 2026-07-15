@@ -8,7 +8,7 @@ and M:N junction tables (document_organization, document_topic).
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from core.models.models import LegalStatus, OfficialDocument, Source
 from core.observability import get_tracer
@@ -18,7 +18,27 @@ from core.persistence.repository.reference_repo import ReferenceRepository
 if TYPE_CHECKING:
     import asyncpg
 
-tracer = get_tracer()
+_tracer: Any = None  # lazy — set via _get_tracer()
+
+
+def _get_tracer() -> Any:
+    """Lazy tracer accessor — avoids RuntimeError on import before configure()."""
+    global _tracer
+    if _tracer is None:
+        try:
+            _tracer = get_tracer()
+        except RuntimeError:
+            from adapters.base.ingest_pipeline import _NullSpan
+
+            class _LazyTracer:
+                """Minimal no-op tracer for graceful degradation."""
+
+                def trace(self, name: str) -> _NullSpan:  # noqa: ARG002
+                    return _NullSpan()
+
+            _tracer = _LazyTracer()
+    return _tracer
+
 
 # ── Shared SELECT columns and JOINs ──────────────────────────────────────
 
@@ -322,7 +342,7 @@ class DocumentRepository:
             LegalStatus.ACTIVE if the document has valid_from in the past.
             LegalStatus.UNKNOWN otherwise.
         """
-        with tracer.trace("document_repo.get_legal_status") as span:
+        with _get_tracer().trace("document_repo.get_legal_status") as span:
             span.set_input({"doc_uuid": doc_uuid})
 
             # 1. Check if document has been fully revoked
