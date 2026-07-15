@@ -138,12 +138,14 @@ flowchart TD
 
 **Критерий:** Для тестового документа определяются типы разделов через regexp.
 
-#### Шаг 8: Определение актуальности MVP (TD-11)
-**Файлы:** `core/persistence/repository/document_repo.py`
+#### Шаг 8: Определение актуальности чанка(TD-11) ✅
+**Файлы:** [`core/persistence/repository/document_repo.py`](core/persistence/repository/document_repo.py)
 
-1. `get_legal_status(doc_uuid) → LegalStatus`: SQL по `document_relation`
-2. Если `relation_type IN ('REVOKE','MODIFY')` и `valid_from <= now()` → `REVOKED`/`MODIFIED`
-3. Иначе если `valid_from` в прошлом → `ACTIVE`
+1. ✅ `get_legal_status(doc_uuid) → LegalStatus`: SQL по `document_revocation` / `document_section_modification`
+2. ✅ Если в `document_revocation` есть `revoked_document_id = doc_uuid` и `effective_date <= now()` → `REVOKED`
+3. ✅ Если в `document_section_modification` есть запись для секций документа с `effective_date <= now()` → `MODIFIED`
+4. ✅ Иначе если `valid_from IS NULL OR valid_from <= now()` → `ACTIVE`, иначе `UNKNOWN`
+5. ✅ NO logger — только tracer spans
 
 **Критерий:** `get_legal_status()` возвращает корректный статус.
 

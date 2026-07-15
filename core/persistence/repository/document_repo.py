@@ -11,14 +11,14 @@ from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
 from core.models.models import LegalStatus, OfficialDocument, Source
-from core.observability import get_logger
+from core.observability import get_tracer
 from core.persistence.db_client import DatabaseClient
 from core.persistence.repository.reference_repo import ReferenceRepository
 
 if TYPE_CHECKING:
     import asyncpg
 
-logger = get_logger(__name__)
+tracer = get_tracer()
 
 # ── Shared SELECT columns and JOINs ──────────────────────────────────────
 
@@ -302,6 +302,74 @@ class DocumentRepository:
         if rows is None:
             return []
         return [r["name"] for r in rows]
+
+    async def get_legal_status(
+        self,
+        doc_uuid: str,
+    ) -> LegalStatus:
+        """Determine the legal status of a document by checking revocations and modifications.
+
+        Queries document_revocation and document_section_modification tables
+        to determine if the document has been fully revoked or modified.
+        Falls back to checking valid_from for ACTIVE status.
+
+        Args:
+            doc_uuid: The internal UUID of the document.
+
+        Returns:
+            LegalStatus.REVOKED if a revocation with effective_date <= now() exists.
+            LegalStatus.MODIFIED if a section modification with effective_date <= now() exists.
+            LegalStatus.ACTIVE if the document has valid_from in the past.
+            LegalStatus.UNKNOWN otherwise.
+        """
+        with tracer.trace("document_repo.get_legal_status") as span:
+            span.set_input({"doc_uuid": doc_uuid})
+
+            # 1. Check if document has been fully revoked
+            row = await self._db.fetchval(
+                """
+                SELECT 1 FROM document_revocation
+                WHERE revoked_document_id = $1::uuid
+                  AND (effective_date IS NULL OR effective_date <= now()::date)
+                LIMIT 1
+                """,
+                doc_uuid,
+            )
+            if row is not None:
+                span.set_output({"status": "REVOKED"})
+                return LegalStatus.REVOKED
+
+            # 2. Check if any sections of this document have been modified
+            row = await self._db.fetchval(
+                """
+                SELECT 1 FROM document_section_modification m
+                JOIN document_section s ON s.id = m.section_id
+                WHERE s.document_id = $1::uuid
+                  AND (m.effective_date IS NULL OR m.effective_date <= now()::date)
+                LIMIT 1
+                """,
+                doc_uuid,
+            )
+            if row is not None:
+                span.set_output({"status": "MODIFIED"})
+                return LegalStatus.MODIFIED
+
+            # 3. Check if document has valid_from in the past (is in effect)
+            row = await self._db.fetchval(
+                """
+                SELECT 1 FROM document
+                WHERE id = $1::uuid
+                  AND (valid_from IS NULL OR valid_from <= now())
+                LIMIT 1
+                """,
+                doc_uuid,
+            )
+            if row is not None:
+                span.set_output({"status": "ACTIVE"})
+                return LegalStatus.ACTIVE
+
+            span.set_output({"status": "UNKNOWN"})
+            return LegalStatus.UNKNOWN
 
     async def search_documents(
         self,

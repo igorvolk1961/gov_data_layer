@@ -12,10 +12,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from core.models.models import TocNode
-from core.observability import get_logger
+from core.observability import get_tracer
 from core.persistence.db_client import DatabaseClient
 
-logger = get_logger(__name__)
+tracer = get_tracer()
 
 
 class SectionRepository:
@@ -198,6 +198,89 @@ class SectionRepository:
             section_id,
             effective_date,
         )
+
+    async def is_section_actual(
+        self,
+        section_uuid: str,
+    ) -> bool:
+        """Check whether a section is still actual.
+
+        A section is non-actual if any of these conditions hold:
+        1. The parent document has been revoked (document_revocation)
+        2. The section has been deleted (is_deleted = true)
+        3. The section has been modified (is_modified = true)
+        4. There is an external modification record (document_section_modification)
+
+        Args:
+            section_uuid: UUID of the section to check.
+
+        Returns:
+            True if the section is still actual, False otherwise.
+        """
+        with tracer.trace("section_repo.is_section_actual") as span:
+            span.set_input({"section_uuid": section_uuid})
+
+            # 1. Check if parent document has been revoked
+            row = await self._db.fetchval(
+                """
+                SELECT 1 FROM document_section s
+                JOIN document_revocation r ON r.revoked_document_id = s.document_id
+                WHERE s.id = $1::uuid
+                  AND (r.effective_date IS NULL OR r.effective_date <= now()::date)
+                LIMIT 1
+                """,
+                section_uuid,
+            )
+            if row is not None:
+                span.set_output({"actual": False})
+                return False
+
+            # 2. Check if section was marked as deleted
+            row = await self._db.fetchval(
+                """
+                SELECT 1 FROM document_section
+                WHERE id = $1::uuid
+                  AND is_deleted = true
+                  AND (delete_effective_date IS NULL OR delete_effective_date <= now()::date)
+                LIMIT 1
+                """,
+                section_uuid,
+            )
+            if row is not None:
+                span.set_output({"actual": False})
+                return False
+
+            # 3. Check if section was directly marked as modified
+            row = await self._db.fetchval(
+                """
+                SELECT 1 FROM document_section
+                WHERE id = $1::uuid
+                  AND is_modified = true
+                  AND (modified_effective_date IS NULL OR modified_effective_date <= now()::date)
+                LIMIT 1
+                """,
+                section_uuid,
+            )
+            if row is not None:
+                span.set_output({"actual": False})
+                return False
+
+            # 4. Check document_section_modification table for external changes
+            row = await self._db.fetchval(
+                """
+                SELECT 1 FROM document_section_modification
+                WHERE section_id = $1::uuid
+                  AND (effective_date IS NULL OR effective_date <= now()::date)
+                LIMIT 1
+                """,
+                section_uuid,
+            )
+            if row is not None:
+                span.set_output({"actual": False})
+                return False
+
+            span.set_output({"actual": True})
+            return True
 
 
 __all__ = [
