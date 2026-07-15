@@ -10,9 +10,13 @@ Manages two tables:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from core.observability import get_logger
 from core.persistence.db_client import DatabaseClient
+
+if TYPE_CHECKING:
+    from core.analyzer.section_analyzer import SectionFact
 
 logger = get_logger(__name__)
 
@@ -195,7 +199,6 @@ class ChangeTrackingRepository:
             for r in rows
         ]
 
-
     async def resolve_target_document_id(
         self,
         search_text: str | None,
@@ -223,12 +226,12 @@ class ChangeTrackingRepository:
         if row is not None:
             return str(row)
 
-        # Try trigram similarity search on title
+        # Try trigram similarity search on title (requires pg_trgm extension)
         row = await self._db.fetchval(
             """
             SELECT id FROM document
-            WHERE title % $1
-            ORDER BY similarity(title, $1) DESC
+            WHERE title % $1::text
+            ORDER BY similarity(title, $1::text) DESC
             LIMIT 1
             """,
             search_text,
@@ -237,7 +240,7 @@ class ChangeTrackingRepository:
 
     async def save_analysis_facts(
         self,
-        facts: list,
+        facts: list[SectionFact],
         current_doc_uuid: str,
         section_uuids: dict[str, str],
     ) -> None:
@@ -260,9 +263,7 @@ class ChangeTrackingRepository:
 
             if fact.fact_type.value in ("revoke", "modify"):
                 # Try to resolve the target document
-                target_doc_uuid = await self.resolve_target_document_id(
-                    fact.target_document_id
-                )
+                target_doc_uuid = await self.resolve_target_document_id(fact.target_document_id)
 
                 if target_doc_uuid is None:
                     continue  # Cannot persist without a known target

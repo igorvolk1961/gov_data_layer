@@ -11,10 +11,11 @@
 |-----------|--------|
 | `ODLService.search_documents()` | Опрашивает все адаптеры через `adapter.search()` — не использует Qdrant |
 | `ODLService.get_document_detail()` | Получает документ от адаптера, персистит в PostgreSQL |
-| `QdrantStore` | Работает с реальным Qdrant. Payload-фильтров нет |
+| `QdrantStore` | Работает с реальным Qdrant. ✅ Payload: `section_uuids`, `data_freshness` |
 | `Embedder` | Работает, выдаёт 384-dim векторы |
-| `DocStructSplitter` | Разбивает текст на чанки и TOC |
-| PostgreSQL репозитории | DocumentRepository, ReferenceRepository, SectionRepository — работают |
+| `DocStructSplitter` | Разбивает текст на чанки и TOC ✅ `section_external_ids`/`section_uuids` |
+| PostgreSQL репозитории | DocumentRepository, ReferenceRepository, SectionRepository, ChangeTrackingRepository — работают |
+| `SectionAnalyzer` | Stub (no-op). ✅ Инфраструктура персиста фактов готова |
 | MCP/REST эндпоинты | Вызывают ODLService, но `search_documents()` не делает векторный поиск |
 
 ---
@@ -129,11 +130,11 @@ flowchart TD
 #### Шаг 7: Семантический анализ разделов MVP (TD-9) ✅ (stub)
 **Файлы:** [`core/analyzer/section_analyzer.py`](core/analyzer/section_analyzer.py), [`core/analyzer/__init__.py`](core/analyzer/__init__.py)
 
-1. ✅ `SectionAnalyzer.analyze(text) → list[SectionFact]` — stub на regexp
-2. ✅ Паттерны: `признать утратившим силу` → `REVOKE` (0.95), `внести изменения` → `MODIFY` (0.85), `изложить в новой редакции` → `MODIFY` (0.90), `ввести в действие` → `ENACT` (0.90)
-3. ⏳ Сохранять факты в БД — **отложено**, полный семантический анализ (NER/LLM) выходит за рамки PoC
-4. ✅ Каждый факт содержит `extraction_confidence` и `target_document_id`
-5. ✅ 18 unit-тестов (REVOKE/MODIFY/ENACT/RELATE/dedup/edge cases)
+1. ⏳ `SectionAnalyzer.analyze()` — no-op stub. Полноценный анализ (NER/LLM) выходит за рамки PoC
+2. ✅ `SectionFact` / `SectionFactType` — модели данных готовы
+3. ✅ `ChangeTrackingRepository.save_analysis_facts()` — персистит факты в `document_revocation` / `document_section_modification`
+4. ✅ `resolve_target_document_id()` — поиск по `document_number` → trigram `title`
+5. ✅ Анализ и персист встроены в pipeline
 
 **Критерий:** Для тестового документа определяются типы разделов через regexp.
 

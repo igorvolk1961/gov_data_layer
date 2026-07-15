@@ -127,6 +127,7 @@ jobs:
         env:
           PGPASSWORD: odl  # pragma: allowlist secret
         run: |
+          psql -h localhost -p 5432 -U odl -d odl_metadata -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
           for f in \
             core/persistence/migrations/v001/000_create_data_source.sql \
             core/persistence/migrations/v001/001_create_reference_tables.sql \

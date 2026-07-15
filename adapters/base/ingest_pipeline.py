@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from core.analyzer.section_analyzer import SectionFact
     from core.index.qdrant_store import QdrantStore
     from core.ingest.chunker import DocStructSplitter
     from core.ingest.embedder import Embedder
@@ -121,13 +122,17 @@ async def process_document_text(
 
                     analyzer = SectionAnalyzer()
                     ct_repo = ChangeTrackingRepository(section_repo._db)
-                    all_facts: list = []
+                    all_facts: list[SectionFact] = []
                     for chunk in chunks:
-                        sec_ext_id = chunk.section_external_ids[0] if chunk.section_external_ids else ""
+                        sec_ext_id = (
+                            chunk.section_external_ids[0] if chunk.section_external_ids else ""
+                        )
                         facts = analyzer.analyze(chunk.text, sec_ext_id)
                         all_facts.extend(facts)
                     if all_facts:
-                        await ct_repo.save_analysis_facts(all_facts, doc_uuid, resolved_section_uuids)
+                        await ct_repo.save_analysis_facts(
+                            all_facts, doc_uuid, resolved_section_uuids
+                        )
                         span.set_output({"facts_saved": len(all_facts)})
                 except Exception as exc:
                     span.set_error(exc)

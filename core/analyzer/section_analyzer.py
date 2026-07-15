@@ -71,7 +71,7 @@ class SectionFact:
 
     def __repr__(self) -> str:
         return (
-            f"SectionFact({self.fact_type.value}, "
+            f"SectionFact({self.fact_type.name}, "
             f"section={self.section_external_id}, "
             f"confidence={self.confidence:.2f})"
         )
@@ -116,7 +116,10 @@ _PATTERNS: list[tuple[re.Pattern[str], SectionFactType, float]] = [
     ),
     # ── ENACT patterns ───────────────────────────────────────────
     (
-        re.compile(r"ввест(и|ить|ится|ятся|ил|ила|ило|или|ён|ена|ены)\s+(?:.*?\s+)?в\s+действие", re.IGNORECASE),
+        re.compile(
+            r"ввест(и|ить|ится|ятся|ил|ила|ило|или|ён|ена|ены)\s+(?:.*?\s+)?в\s+действие",
+            re.IGNORECASE,
+        ),
         SectionFactType.ENACT,
         0.90,
     ),
@@ -144,7 +147,9 @@ class SectionAnalyzer:
     replaced by LLM-based analysis in future iterations.
     """
 
-    def __init__(self, patterns: list[tuple[re.Pattern[str], SectionFactType, float]] | None = None) -> None:
+    def __init__(
+        self, patterns: list[tuple[re.Pattern[str], SectionFactType, float]] | None = None
+    ) -> None:
         """Initialize with optional custom patterns.
 
         Args:

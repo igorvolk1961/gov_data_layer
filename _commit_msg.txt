@@ -1,0 +1,7 @@
+fix: install pg_trgm extension in Docker and CI, restore trigram query
+
+- Add core/persistence/init/01-pg_trgm.sql for Docker PostgreSQL init
+- Mount init dir into metadata-db container in docker-compose.yml
+- Add psql CREATE EXTENSION command in CI workflow before migrations
+- Restore pg_trgm % operator with ::text cast in resolve_target_document_id
+- Fix SectionFact.__repr__ to use .name (uppercase enum name)

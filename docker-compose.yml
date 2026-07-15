@@ -85,6 +85,7 @@ services:
       - POSTGRES_DB=odl_metadata
     volumes:
       - metadata_db_data:/var/lib/postgresql/data
+      - ./core/persistence/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U odl"]
       interval: 30s
