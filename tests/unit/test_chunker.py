@@ -107,3 +107,53 @@ class TestDocStructSplitter:
         chunks2, toc2 = await splitter.split_text(SAMPLE_TEXT, "doc-1", "uuid-1")
         assert len(chunks1) == len(chunks2)
         assert len(toc1) == len(toc2)
+
+    # ── Step 6: section_external_ids and section_uuids ────────────────
+
+    @pytest.mark.asyncio
+    async def test_chunks_have_section_external_ids(self, splitter: DocStructSplitter) -> None:
+        """Chunks should have section_external_ids populated from section hierarchy."""
+        chunks, _toc = await splitter.split_text(SAMPLE_TEXT, "doc-1", "uuid-1")
+        for chunk in chunks:
+            assert isinstance(chunk.section_external_ids, list)
+            # section_external_ids should have same length as section_path
+            assert len(chunk.section_external_ids) == len(chunk.section_path), (
+                f"Mismatch: ext_ids={chunk.section_external_ids}, path={chunk.section_path}"
+            )
+            # Each external_id is a section number (string)
+            for eid in chunk.section_external_ids:
+                assert isinstance(eid, str)
+                assert len(eid) > 0, "External ID should not be empty"
+
+    @pytest.mark.asyncio
+    async def test_section_uuids_empty_without_mapping(self, splitter: DocStructSplitter) -> None:
+        """Without section_uuids mapping, section_uuids should be empty."""
+        chunks, _toc = await splitter.split_text(SAMPLE_TEXT, "doc-1", "uuid-1")
+        for chunk in chunks:
+            assert chunk.section_uuids == [], (
+                f"Expected empty uuids without mapping, got {chunk.section_uuids}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_section_uuids_populated_with_mapping(self, splitter: DocStructSplitter) -> None:
+        """With section_uuids mapping, uuids should be populated from external_ids."""
+        # Mapping: section number -> UUID
+        section_map = {"1": "uuid-100-0001", "1.1": "uuid-100-0002", "2": "uuid-100-0003"}
+        chunks, _toc = await splitter.split_text(SAMPLE_TEXT, "doc-1", "uuid-1", section_map)
+        for chunk in chunks:
+            assert len(chunk.section_uuids) == len(chunk.section_external_ids), (
+                f"uuids={chunk.section_uuids} should match ext_ids={chunk.section_external_ids}"
+            )
+            # Each UUID should match the mapping when available, or be empty string
+            for eid, uid in zip(chunk.section_external_ids, chunk.section_uuids, strict=True):
+                expected = section_map.get(eid, "")
+                assert uid == expected, f"external_id={eid}: expected UUID={expected}, got {uid}"
+
+    @pytest.mark.asyncio
+    async def test_section_uuids_with_empty_mapping(self, splitter: DocStructSplitter) -> None:
+        """Empty section_uuids dict should result in empty uuids on chunks."""
+        chunks, _toc = await splitter.split_text(SAMPLE_TEXT, "doc-1", "uuid-1", {})
+        for chunk in chunks:
+            assert chunk.section_uuids == [], (
+                f"Expected empty uuids with empty mapping, got {chunk.section_uuids}"
+            )

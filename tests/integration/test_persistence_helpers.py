@@ -387,3 +387,76 @@ async def test_transaction_proxy_all_methods(
     )
     assert row is not None
     assert row["name"] == "TransactionProxy Test"
+
+
+# ── SectionRepository upsert_sections return mapping ─────────────────────
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_upsert_sections_returns_mapping(
+    db: DatabaseClient,
+    source_uuid: str,
+) -> None:
+    """Verify upsert_sections() returns dict mapping external_id -> UUID."""
+    from core.models.models import TocNode
+    from core.persistence.repository import SectionRepository
+
+    repo = SectionRepository(db)
+
+    import uuid as _uuid
+
+    # First create a document to satisfy FK
+    doc_ext_id = f"test-upsert-sections-{_uuid.uuid4().hex[:8]}"
+    doc_id = await db.fetchval(
+        """
+        INSERT INTO document (id, source_id, publish_id, title)
+        VALUES (gen_random_uuid(), $1::uuid, $2, $3)
+        ON CONFLICT (source_id, publish_id) DO NOTHING
+        RETURNING id
+        """,
+        source_uuid,
+        doc_ext_id,
+        "Test Document for Sections",
+    )
+    if doc_id is None:
+        doc_id = await db.fetchval(
+            "SELECT id FROM document WHERE source_id = $1::uuid AND publish_id = $2",
+            source_uuid,
+            doc_ext_id,
+        )
+    assert doc_id is not None
+    doc_uuid = str(doc_id)
+
+    # Upsert sections
+    sections = [
+        TocNode(
+            id="1", document_id=doc_uuid, title="Раздел I", parent_id="", level=0, child_count=2
+        ),
+        TocNode(
+            id="1.1", document_id=doc_uuid, title="Статья 1", parent_id="1", level=1, child_count=0
+        ),
+        TocNode(
+            id="1.2", document_id=doc_uuid, title="Статья 2", parent_id="1", level=1, child_count=0
+        ),
+    ]
+
+    mapping = await repo.upsert_sections(doc_uuid, sections)
+
+    # Verify mapping contains all external_ids
+    assert isinstance(mapping, dict)
+    assert len(mapping) == 3, f"Expected 3 sections, got {len(mapping)}"
+    for section in sections:
+        assert section.id in mapping, f"Missing external_id '{section.id}' in mapping"
+        uuid_val = mapping[section.id]
+        assert uuid_val, f"Empty UUID for external_id '{section.id}'"
+        # Verify it's a valid UUID format
+        assert len(uuid_val) == 36, f"Expected UUID length 36, got {len(uuid_val)} for {section.id}"
+
+    # Verify re-upsert returns same UUIDs
+    mapping2 = await repo.upsert_sections(doc_uuid, sections)
+    assert mapping == mapping2, "Re-upsert should return same UUIDs"
+
+    # Verify empty sections returns empty dict
+    empty = await repo.upsert_sections(doc_uuid, [])
+    assert empty == {}

@@ -278,10 +278,12 @@ class TestGetDocumentDetail:
     ) -> None:
         """Verify that get_document_detail calls tracer.trace with correct args."""
         await service.get_document_detail("doc-1")
-        tracer_mock.trace.assert_called_once_with(
+        tracer_mock.trace.assert_any_call(
             "get_document_detail",
             source_id="doc-1",
         )
+        # Also verifies the new persistence.skip_no_db span (Step 6)
+        tracer_mock.trace.assert_any_call("persistence.skip_no_db")
 
 
 class TestGetDocumentDetailWithQdrant:

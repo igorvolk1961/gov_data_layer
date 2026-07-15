@@ -86,7 +86,7 @@ class DocStructSplitter:
         text: str,
         document_id: str,
         doc_uuid: str,
-        _section_uuids: dict[str, str] | None,
+        section_uuids: dict[str, str] | None,
     ) -> tuple[list[DocumentChunk], list[TocNode]]:
         """Split using ChunkingOrchestrator (blocking — runs in thread pool)."""
         await self._ensure_chunker()
@@ -112,7 +112,9 @@ class DocStructSplitter:
         toc = self._sections_to_toc(raw_sections, document_id)
 
         # Chunks -> DocumentChunk (with section_path via parent chain)
-        chunks = self._chunks_to_doc_chunks(raw_chunks, sec_map, document_id, doc_uuid)
+        chunks = self._chunks_to_doc_chunks(
+            raw_chunks, sec_map, document_id, doc_uuid, section_uuids
+        )
 
         return (chunks, toc)
 
@@ -144,38 +146,50 @@ class DocStructSplitter:
         sec_map: dict[str, dict[str, Any]],
         document_id: str,
         doc_uuid: str,
+        section_uuids: dict[str, str] | None = None,
     ) -> list[DocumentChunk]:
         """Convert serialized Chunk dicts to DocumentChunk list.
 
         Computes section_chunk_index — sequential index within each section.
         Chunks with the same section_path get sequential indices starting from 0.
+
+        Populates section_external_ids and section_uuids from the section hierarchy
+        and the provided external_id → UUID mapping (from PostgreSQL persistence).
         """
-        # First pass: build all chunks with paths
-        interim: list[tuple[list[str], dict[str, Any], int]] = []
+        has_mapping = section_uuids is not None and len(section_uuids) > 0
+        # First pass: build all chunks with paths and external_ids
+        interim: list[tuple[list[str], list[str], dict[str, Any], int]] = []
         for i, ch in enumerate(chunks):
             meta = ch.get("metadata", {})
             sec_num = str(meta.get("section_number", ""))
 
-            # Строим section_path через parent_number chain
+            # Строим section_path и external_ids через parent_number chain
             path: list[str] = []
+            external_ids: list[str] = []
             cur = sec_map.get(sec_num)
             while cur is not None:
                 num = cur.get("number", "")
                 title = cur.get("title", "")
                 label = f"{num}. {title}".strip(". ")
                 path.insert(0, label)
+                external_ids.insert(0, str(num))
                 parent_num = cur.get("parent_number")
                 cur = sec_map.get(str(parent_num)) if parent_num is not None else None
 
-            interim.append((path, ch, i))
+            interim.append((path, external_ids, ch, i))
 
         # Second pass: compute section_chunk_index per unique section_path
         section_counter: dict[str, int] = {}
         result: list[DocumentChunk] = []
-        for path, ch, i in interim:
+        for path, external_ids, ch, i in interim:
             section_key = "|".join(path)  # join path as key for grouping
             sec_idx = section_counter.get(section_key, 0)
             section_counter[section_key] = sec_idx + 1
+
+            # Map external_ids to PostgreSQL UUIDs (only if mapping is non-empty)
+            uuids: list[str] = []
+            if has_mapping:
+                uuids = [section_uuids.get(eid, "") for eid in external_ids]  # type: ignore[union-attr]
 
             meta = ch.get("metadata", {})
             result.append(
@@ -185,8 +199,8 @@ class DocStructSplitter:
                     doc_uuid=doc_uuid,
                     text=str(ch.get("content", "")),
                     section_path=path,
-                    section_external_ids=[],
-                    section_uuids=[],
+                    section_external_ids=external_ids,
+                    section_uuids=uuids,
                     chunk_index=i,
                     section_chunk_index=sec_idx,
                 )

@@ -2,6 +2,7 @@
 
 Fetches each document from the real API, then runs the shared pipeline:
 metadata → OCR → TOC → chunk → embed → Qdrant.
+Sections are persisted to PostgreSQL via the shared pipeline.
 """
 
 from __future__ import annotations
@@ -9,16 +10,14 @@ from __future__ import annotations
 from adapters.base.ingest_pipeline import process_document_text
 from adapters.pravo.adapter.handlers import BaseIngestHandler
 from adapters.pravo.adapter.stub._data import _STUB_PUBLISH_IDS_INITIAL
-from core.observability.logger import get_logger
-
-logger = get_logger(__name__)
 
 
 class StubIngestHandler(BaseIngestHandler):
     """Ingest documents from the fixed stub publish_id list.
 
     Uses real API calls for metadata and OCR, then runs the shared
-    pipeline (chunk → embed → Qdrant) — same as production mode.
+    pipeline (chunk → embed → Qdrant with section persistence) — same
+    as production mode.
     """
 
     async def ingest(self) -> int:
@@ -26,6 +25,7 @@ class StubIngestHandler(BaseIngestHandler):
 
         Iterates over _STUB_PUBLISH_IDS_INITIAL, calls adapter.get()
         for each one, runs OCR, chunks, embeds, and stores in Qdrant.
+        Sections are persisted to PostgreSQL if DB is configured.
 
         Returns:
             Number of documents successfully processed.
@@ -36,6 +36,13 @@ class StubIngestHandler(BaseIngestHandler):
             source_id=adapter.source_id,
             mode="stub",
         ) as span:
+            # Create section_repo if DB is available
+            section_repo = None
+            if adapter._db is not None:
+                from core.persistence.repository import SectionRepository
+
+                section_repo = SectionRepository(adapter._db)
+
             count = 0
             errors: list[str] = []
             for publish_id in _STUB_PUBLISH_IDS_INITIAL:
@@ -55,23 +62,22 @@ class StubIngestHandler(BaseIngestHandler):
                     # 3. Get text via OCR (from cache in stub mode)
                     text = await adapter.get_content(document_id)  # type: ignore[attr-defined]
 
-                    # 4. Run shared pipeline: chunk → embed → Qdrant
-                    await process_document_text(text, document_id, doc_uuid)
+                    # 4. Run shared pipeline: chunk → persist sections → embed → Qdrant
+                    await process_document_text(
+                        text,
+                        document_id,
+                        doc_uuid,
+                        section_repo=section_repo,
+                    )
 
                     count += 1
-                    logger.info("Processed document '%s' through pipeline", document_id)
                 except Exception as exc:
-                    logger.error("Failed to process document '%s': %s", document_id, exc)
+                    with adapter.tracer.trace("pravo.ingest.item_error") as item_span:
+                        item_span.set_input({"document_id": document_id})
+                        item_span.set_error(exc)
                     errors.append(str(exc))
 
             span.set_output({"count": count, "errors": errors})
-            if errors:
-                logger.warning(
-                    "Ingest completed with %d/%d successes, %d errors",
-                    count,
-                    len(_STUB_PUBLISH_IDS_INITIAL),
-                    len(errors),
-                )
             return count
 
 

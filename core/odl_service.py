@@ -150,20 +150,17 @@ class ODLService(ODLServiceProtocol):
     ) -> None:
         """Persist a canonical document + its sections to PostgreSQL.
 
-        If DatabaseClient is not configured (self._db is None), logs a warning
-        and returns. If configured, persistence is mandatory — errors propagate
-        to the caller.
+        If DatabaseClient is not configured (self._db is None), records a
+        tracer span and returns. If configured, persistence is mandatory —
+        errors propagate to the caller.
 
         This is called as a side-effect from get_document_detail(), so the
         try/except in that method will catch and log any DB errors without
         failing the API response.
         """
         if self._db is None:
-            logger.warning(
-                "Database not configured — skipping persistence for document %s (source=%s)",
-                doc.id,
-                source_id,
-            )
+            with self.tracer.trace("persistence.skip_no_db") as span:
+                span.set_input({"document_id": doc.id, "source_id": source_id})
             return
 
         # Ensure DB connection is established
@@ -188,9 +185,11 @@ class ODLService(ODLServiceProtocol):
         # 2. Upsert the document
         doc_uuid = await doc_repo.upsert_document(doc, source_uuid)
 
-        # 3. Upsert sections (TOC)
+        # 3. Upsert sections (TOC) — mapping returned for tracing
         if toc:
-            await section_repo.upsert_sections(doc_uuid, toc)
+            section_map = await section_repo.upsert_sections(doc_uuid, toc)
+            with self.tracer.trace("persistence.sections_upserted") as span:
+                span.set_output({"count": len(section_map)})
 
     def _get_adapter(self, source_id: str) -> SourceAdapter:
         """Find the adapter that owns the given source_id.

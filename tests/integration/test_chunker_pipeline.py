@@ -344,3 +344,37 @@ class TestPipelineWithoutQdrant:
             assert c.doc_uuid == "test-uuid"
         for node in toc:
             assert node.document_id == "pravo-7800202607010012"
+
+    @pytest.mark.asyncio
+    async def test_pipeline_with_section_repo(
+        self,
+        disabled_qdrant: QdrantStore,
+    ) -> None:
+        """When section_repo is provided, sections should be persisted and section_uuids set."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_section_repo = MagicMock()
+        mock_section_repo.upsert_sections = AsyncMock(
+            return_value={"1": "uuid-abc-123", "2": "uuid-def-456"}
+        )
+
+        chunks, _toc = await process_document_text(
+            text=TEST_OCR_TEXT,
+            document_id="pravo-7800202607010012",
+            doc_uuid="test-doc-uuid",
+            qdrant=disabled_qdrant,
+            section_repo=mock_section_repo,
+        )
+
+        # Verify upsert_sections was called with correct args
+        mock_section_repo.upsert_sections.assert_awaited_once()
+        call_args = mock_section_repo.upsert_sections.call_args
+        assert call_args[0][0] == "test-doc-uuid"  # doc_uuid
+        assert len(call_args[0][1]) > 0  # toc list
+
+        # Chunks should have section_uuids populated for matched external_ids
+        for chunk in chunks:
+            assert len(chunk.section_uuids) == len(chunk.section_external_ids)
+            for eid, uid in zip(chunk.section_external_ids, chunk.section_uuids, strict=True):
+                expected = mock_section_repo.upsert_sections.return_value.get(eid, "")
+                assert uid == expected, f"Section {eid}: expected {expected}, got {uid}"

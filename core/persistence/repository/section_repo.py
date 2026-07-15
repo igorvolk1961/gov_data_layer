@@ -28,61 +28,98 @@ class SectionRepository:
         self,
         document_id: str,
         sections: list[TocNode],
-    ) -> None:
+    ) -> dict[str, str]:
         """Upsert a list of sections for a document.
 
-        Uses ON CONFLICT on (document_id, external_id) to update existing sections.
+        For each section, checks by (document_id, external_id) whether a record
+        already exists. If it does — updates it; otherwise inserts a new row.
+
+        Returns:
+            Dict mapping external_id -> PostgreSQL UUID for each upserted section.
 
         Raises:
             asyncpg.PostgresError: On query failure.
             ConnectionError: If not connected.
         """
         if not sections:
-            return
+            return {}
 
+        section_map: dict[str, str] = {}
         for section in sections:
             parent_external_id = section.parent_id if section.parent_id else None
-            await self._db.execute(
+            sort_order = getattr(section, "sort_order", 0) or 0
+
+            # Check if a section with this (document_id, external_id) already exists
+            existing = await self._db.fetchval(
                 """
-                INSERT INTO document_section (
-                    document_id, external_id, title, parent_id,
-                    level, sort_order
-                ) VALUES (
-                    $1::uuid, $2, $3,
-                    (SELECT id FROM document_section
-                     WHERE document_id = $1::uuid AND external_id = $4),
-                    $5, $6
-                )
-                ON CONFLICT (document_id, external_id) DO UPDATE
-                    SET title = EXCLUDED.title,
+                SELECT id FROM document_section
+                WHERE document_id = $1::uuid AND external_id = $2
+                """,
+                document_id,
+                section.id,
+            )
+
+            if existing is not None:
+                # Update existing row
+                row = await self._db.fetchval(
+                    """
+                    UPDATE document_section
+                    SET title = $3,
                         parent_id = (
                             SELECT id FROM document_section
                             WHERE document_id = $1::uuid AND external_id = $4
                         ),
-                        level = EXCLUDED.level,
-                        sort_order = EXCLUDED.sort_order,
+                        level = $5,
+                        ordinal = $6,
                         updated_at = now()
-                """,
-                document_id,
-                section.id,
-                section.title,
-                parent_external_id,
-                section.level,
-                getattr(section, "sort_order", 0) or 0,
-            )
+                    WHERE id = $2::uuid
+                    RETURNING id
+                    """,
+                    document_id,
+                    existing,
+                    section.title,
+                    parent_external_id,
+                    section.level,
+                    sort_order,
+                )
+            else:
+                # Insert new row
+                row = await self._db.fetchval(
+                    """
+                    INSERT INTO document_section (
+                        document_id, external_id, title, parent_id,
+                        level, ordinal
+                    ) VALUES (
+                        $1::uuid, $2, $3,
+                        (SELECT id FROM document_section
+                         WHERE document_id = $1::uuid AND external_id = $4),
+                        $5, $6
+                    )
+                    RETURNING id
+                    """,
+                    document_id,
+                    section.id,
+                    section.title,
+                    parent_external_id,
+                    section.level,
+                    sort_order,
+                )
+            if row is not None:
+                section_map[section.id] = str(row)
+        return section_map
 
     async def get_sections(
         self,
         document_id: str,
     ) -> list[TocNode]:
-        """Get all sections for a document, ordered by sort_order."""
+        """Get all sections for a document, ordered by ordinal."""
         rows = await self._db.fetch(
             """
-            SELECT id, external_id, title, parent_id, level, sort_order,
+            SELECT id, external_id, title, parent_id, level, ordinal,
                    is_deleted, is_modified
             FROM document_section
             WHERE document_id = $1::uuid
-            ORDER BY sort_order, level, title
+            ORDER BY ordinal, level, title
             """,
             document_id,
         )

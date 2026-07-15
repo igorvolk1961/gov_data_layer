@@ -2,6 +2,7 @@
 
 Fetches documents from API, then runs the shared pipeline:
 metadata → OCR → TOC → chunk → embed → Qdrant.
+Sections are persisted to PostgreSQL via the shared pipeline.
 """
 
 from __future__ import annotations
@@ -12,9 +13,6 @@ from adapters.base.ingest_pipeline import process_document_text
 from adapters.pravo.adapter.constants import _INGEST_PAGE_SIZE
 from adapters.pravo.adapter.handlers import BaseIngestHandler
 from core.errors import SourceUnavailableError
-from core.observability.logger import get_logger
-
-logger = get_logger(__name__)
 
 
 class ProductionIngestHandler(BaseIngestHandler):
@@ -24,7 +22,7 @@ class ProductionIngestHandler(BaseIngestHandler):
         """Ingest documents in production mode.
 
         Full pipeline: fetch metadata → cache → persist to DB →
-        OCR → TOC → chunk → embed → Qdrant.
+        OCR → TOC → chunk → embed → Qdrant (with section persistence).
 
         Returns:
             Number of successfully ingested documents.
@@ -33,15 +31,24 @@ class ProductionIngestHandler(BaseIngestHandler):
         with adapter.tracer.trace(
             "pravo.ingest",
             source_id=adapter.source_id,
-            mode="stub",
+            mode="production",
         ) as span:
             await adapter._ensure_caches_populated()
+
+            # Create section_repo if DB is available
+            section_repo = None
+            if adapter._db is not None:
+                from core.persistence.repository import SectionRepository
+
+                section_repo = SectionRepository(adapter._db)
+
             try:
                 result = await adapter._pravo_client.search_documents(
                     params={"pageSize": _INGEST_PAGE_SIZE, "sort": "publishDate"}
                 )
                 items = result.get("items", [])
                 count = 0
+                errors: list[str] = []
                 for raw in items:
                     try:
                         doc = adapter._parser.parse_search_result(raw)
@@ -57,26 +64,39 @@ class ProductionIngestHandler(BaseIngestHandler):
                         # Get text via OCR
                         text = await adapter.get_content(document_id)  # type: ignore[attr-defined]
 
-                        # Run shared pipeline: chunk → embed → Qdrant
-                        await process_document_text(text, document_id, doc_uuid)
+                        # Run shared pipeline: chunk → persist sections → embed → Qdrant
+                        await process_document_text(
+                            text,
+                            document_id,
+                            doc_uuid,
+                            section_repo=section_repo,
+                        )
 
                         count += 1
                     except (ValueError, KeyError, TypeError) as exc:
-                        logger.warning("Failed to process ingest item: %s", exc)
+                        with adapter.tracer.trace("pravo.ingest.item_error") as item_span:
+                            item_span.set_input({"document_id": document_id})
+                            item_span.set_error(exc)
                         continue
                     except Exception as exc:
-                        logger.warning("Pipeline failed for document: %s", exc)
+                        with adapter.tracer.trace("pravo.ingest.pipeline_error") as pipe_span:
+                            pipe_span.set_input({"document_id": document_id})
+                            pipe_span.set_error(exc)
+                        errors.append(str(exc))
                         continue
 
-                span.set_output({"count": count, "mode": "production"})
-                logger.info("Ingested %d documents from pravo.gov.ru", count)
+                span.set_output({"count": count, "errors": errors})
                 return count
             except SourceUnavailableError:
                 circuit_state = adapter._pravo_client.circuit_state
-                logger.warning("Ingest failed — API unavailable (circuit: %s)", circuit_state)
-                span.set_output(
-                    {"count": 0, "error": "source_unavailable", "circuit_state": circuit_state}
-                )
+                with adapter.tracer.trace("pravo.ingest.source_unavailable") as src_span:
+                    src_span.set_output(
+                        {
+                            "count": 0,
+                            "error": "source_unavailable",
+                            "circuit_state": circuit_state,
+                        }
+                    )
                 return 0
 
     async def _get_doc_uuid(self, publish_id: str) -> str:
