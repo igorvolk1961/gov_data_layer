@@ -6,7 +6,9 @@ Supports upsert and hybrid search with payload filters.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from datetime import datetime
 from typing import Any
 
 from core.models.models import DocumentChunk
@@ -142,19 +144,24 @@ class QdrantStore:
                 logger.warning("Chunk %s has no embedding — skipping", chunk.id)
                 continue
 
+            payload: dict[str, Any] = {
+                "document_id": chunk.document_id,
+                "doc_uuid": chunk.doc_uuid,
+                "text": chunk.text,
+                "section_path": chunk.section_path,
+                "section_external_ids": chunk.section_external_ids,
+                "section_uuids": chunk.section_uuids,
+                "chunk_index": chunk.chunk_index,
+                "section_chunk_index": chunk.section_chunk_index,
+            }
+            if chunk.data_freshness is not None:
+                payload["data_freshness"] = chunk.data_freshness.isoformat()
+
             points.append(
                 _qdrant_models.PointStruct(
                     id=chunk.id,
                     vector=chunk.embedding,
-                    payload={
-                        "document_id": chunk.document_id,
-                        "doc_uuid": chunk.doc_uuid,
-                        "text": chunk.text,
-                        "section_path": chunk.section_path,
-                        "section_external_ids": chunk.section_external_ids,
-                        "section_uuids": chunk.section_uuids,
-                        "chunk_index": chunk.chunk_index,
-                    },
+                    payload=payload,
                 )
             )
 
@@ -167,6 +174,18 @@ class QdrantStore:
             points=points,
         )
         logger.info("Upserted %d chunks to collection '%s'", len(points), self._collection)
+
+    async def build_filter(
+        self,
+    ) -> dict[str, Any] | None:
+        """Build a payload filter dict for Qdrant search.
+
+        Returns:
+            Filter dict or None if no filters needed.
+            Currently returns None (all chunks), will be extended
+            for region/topic/actual filters in Phase B.
+        """
+        return None
 
     async def search(
         self,
@@ -225,6 +244,12 @@ class QdrantStore:
         results: list[tuple[DocumentChunk, float]] = []
         for scored in search_result.points:
             payload = scored.payload or {}
+            df_raw = payload.get("data_freshness")
+            data_freshness: datetime | None = None
+            if isinstance(df_raw, str):
+                with contextlib.suppress(ValueError, TypeError):
+                    data_freshness = datetime.fromisoformat(df_raw)
+
             chunk = DocumentChunk(
                 id=str(scored.id),
                 document_id=str(payload.get("document_id", "")),
@@ -234,10 +259,85 @@ class QdrantStore:
                 section_external_ids=list(payload.get("section_external_ids", [])),
                 section_uuids=list(payload.get("section_uuids", [])),
                 chunk_index=int(payload.get("chunk_index", 0)),
+                section_chunk_index=int(payload.get("section_chunk_index", 0)),
+                data_freshness=data_freshness,
             )
             results.append((chunk, scored.score))
 
         return results
+
+    async def get_chunks_by_document_id(
+        self,
+        document_id: str,
+    ) -> list[DocumentChunk]:
+        """Retrieve all chunks for a given document by external document_id.
+
+        Uses scroll (no vector needed) to fetch all chunks matching the
+        document_id filter. Returns empty list if Qdrant is unavailable
+        or no chunks found.
+
+        Args:
+            document_id: External document ID (source_id-publish_id).
+
+        Returns:
+            List of DocumentChunk objects sorted by (section_path, section_chunk_index).
+        """
+        client = await self._get_client()
+        if client is None:
+            return []
+
+        qdrant_filter = _qdrant_models.Filter(
+            must=[
+                _qdrant_models.FieldCondition(
+                    key="document_id",
+                    match=_qdrant_models.MatchValue(value=document_id),
+                ),
+            ],
+        )
+
+        chunks: list[DocumentChunk] = []
+        offset: int | None = None
+
+        while True:
+            result = client.scroll(
+                collection_name=self._collection,
+                scroll_filter=qdrant_filter,
+                limit=100,
+                offset=offset,
+                with_payload=True,
+            )
+            points = result[0]
+            next_offset = result[1] if len(result) > 1 else None
+
+            for point in points:
+                payload = point.payload or {}
+                df_raw = payload.get("data_freshness")
+                data_freshness: datetime | None = None
+                if isinstance(df_raw, str):
+                    with contextlib.suppress(ValueError, TypeError):
+                        data_freshness = datetime.fromisoformat(df_raw)
+
+                chunk = DocumentChunk(
+                    id=str(point.id),
+                    document_id=str(payload.get("document_id", "")),
+                    doc_uuid=str(payload.get("doc_uuid", "")),
+                    text=str(payload.get("text", "")),
+                    section_path=list(payload.get("section_path", [])),
+                    section_external_ids=list(payload.get("section_external_ids", [])),
+                    section_uuids=list(payload.get("section_uuids", [])),
+                    chunk_index=int(payload.get("chunk_index", 0)),
+                    section_chunk_index=int(payload.get("section_chunk_index", 0)),
+                    data_freshness=data_freshness,
+                )
+                chunks.append(chunk)
+
+            if next_offset is None or next_offset == offset:
+                break
+            offset = next_offset
+
+        # Sort by (section_path, section_chunk_index) for deterministic order
+        chunks.sort(key=lambda c: ("|".join(c.section_path), c.section_chunk_index))
+        return chunks
 
     async def delete_document_chunks(self, document_id: str) -> None:
         """Delete all chunks for a given document.

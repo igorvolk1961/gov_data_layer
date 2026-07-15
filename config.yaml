@@ -1,0 +1,50 @@
+# === Official Data Layer — Configuration ===
+# Secrets (API keys, passwords) go into .env, NOT here.
+
+# === Server ===
+server:
+  api_host: "0.0.0.0"
+  api_port: 8000
+  mcp_host: "0.0.0.0"
+  mcp_port: 8001
+
+# === Source Adapters ===
+adapters:
+  - "adapters.stub:StubAdapter"
+  # - "adapters.pravo:PravoAdapter"
+
+# === OCR ===
+ocr:
+  provider: "stub"
+  tesseract:
+    lang: "rus"
+    timeout: 30
+  yandex_vision:
+    timeout: 120
+    folder_id: ""
+
+# === Embedding Model ===
+embedding:
+  model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  vector_size: 384
+
+# === Vector Search (Qdrant) ===
+qdrant:
+  host: "localhost"
+  port: 6333
+
+# === Cache (Redis) ===
+redis:
+  host: "localhost"
+  port: 6379
+
+# === Database (PostgreSQL) — docker-compose credentials ===
+database:
+  url: "postgresql://odl:odl@localhost:5432/odl_metadata"  # pragma: allowlist secret
+
+# === Observability ===
+observability:
+  langfuse_host: "http://localhost:3000"
+  log_level: "INFO"
+  log_clear_on_start: false
+  log_file: "data/traces.log"

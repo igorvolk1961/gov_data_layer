@@ -145,8 +145,13 @@ class DocStructSplitter:
         document_id: str,
         doc_uuid: str,
     ) -> list[DocumentChunk]:
-        """Convert serialized Chunk dicts to DocumentChunk list."""
-        result: list[DocumentChunk] = []
+        """Convert serialized Chunk dicts to DocumentChunk list.
+
+        Computes section_chunk_index — sequential index within each section.
+        Chunks with the same section_path get sequential indices starting from 0.
+        """
+        # First pass: build all chunks with paths
+        interim: list[tuple[list[str], dict[str, Any], int]] = []
         for i, ch in enumerate(chunks):
             meta = ch.get("metadata", {})
             sec_num = str(meta.get("section_number", ""))
@@ -162,6 +167,17 @@ class DocStructSplitter:
                 parent_num = cur.get("parent_number")
                 cur = sec_map.get(str(parent_num)) if parent_num is not None else None
 
+            interim.append((path, ch, i))
+
+        # Second pass: compute section_chunk_index per unique section_path
+        section_counter: dict[str, int] = {}
+        result: list[DocumentChunk] = []
+        for path, ch, i in interim:
+            section_key = "|".join(path)  # join path as key for grouping
+            sec_idx = section_counter.get(section_key, 0)
+            section_counter[section_key] = sec_idx + 1
+
+            meta = ch.get("metadata", {})
             result.append(
                 DocumentChunk(
                     id=str(meta.get("chunk_id", str(uuid.uuid4()))),
@@ -172,6 +188,7 @@ class DocStructSplitter:
                     section_external_ids=[],
                     section_uuids=[],
                     chunk_index=i,
+                    section_chunk_index=sec_idx,
                 )
             )
         return result

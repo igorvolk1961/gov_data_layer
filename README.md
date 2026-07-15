@@ -98,8 +98,8 @@
 
 | #    | Проблема | Описание | Файлы |
 |------|----------|----------|-------|
-| TD-1 | **QdrantStore не подключён к реальному Qdrant** | При импорте qdrant-client — заглушка. Векторный поиск фактически не работает. | [`core/index/qdrant_store.py`](core/index/qdrant_store.py) |
 | TD-3 | **Кэш (Redis) не используется** | CacheClient создаётся, но не передаётся в ODLService методы кэширования. | [`core/cache/`](core/cache/), [`core/odl_service.py`](core/odl_service.py) |
+| TD-13 | **End-to-end query pipeline не собран** | Query → фильтры → гибридный поиск → реранкинг → сборка ответа. | TD-2, TD-12 |
 
 ### 2.2. Долг функциональности 🔶
 
@@ -148,7 +148,7 @@
 | Структурированный входной контракт | ✅ | SearchContext со всеми полями |
 | Контракт ответа | ✅ | SearchResponse + ConfidenceSignals + Citation.section |
 | Холодный и горячий старт | ❌ TD-5 | Кэш (Redis) создан, но не используется |
-| Сигнал исхода (нашёл/не нашёл) | ⚠️ | ConfidenceSignals есть, но retrieval_relevance не вычисляется (TD-2) |
+| Сигнал исхода (нашёл/не нашёл) | ⚠️ | ConfidenceSignals есть, но retrieval_relevance не вычисляется (нужен query pipeline TD-13) |
 | Gen-AI ready API | ✅ | MCP (FastMCP) + OpenAPI (FastAPI) |
 | Вертикаль end-to-end | ❌ TD-13 | Отдельные компоненты готовы, но pipeline не собран |
 | Второй источник-заглушка | ✅ | StubAdapter работает |

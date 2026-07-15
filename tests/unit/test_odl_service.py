@@ -2,27 +2,29 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from adapters.stub import StubAdapter
 from core.errors import NotFoundError
+from core.index.qdrant_store import QdrantStore
+from core.ingest.embedder import Embedder
 from core.models.models import (
     Citation,
     ConfidenceSignals,
+    DocumentChunk,
     DocumentDetail,
     LegalStatus,
     SearchContext,
     SearchResponse,
     SearchResult,
+    SourceAvailability,
     TocNode,
     TopicNode,
 )
 from core.odl_service import ODLService
-
-# Apply asyncio marker to all async tests in this module
-pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
@@ -36,123 +38,160 @@ def tracer_mock() -> MagicMock:
 
 
 @pytest.fixture
+def qdrant_mock() -> MagicMock:
+    """Mock QdrantStore that returns sample chunks."""
+    mock = MagicMock(spec=QdrantStore)
+    chunk = DocumentChunk(
+        id="chunk-001",
+        document_id="stub-doc-001",
+        doc_uuid="uuid-001",
+        text="Test document about НПА regulations and legal framework. "
+        "This is a sample document for testing search functionality.",
+        section_path=["Section 1"],
+        chunk_index=0,
+        data_freshness=datetime(2024, 1, 15, tzinfo=timezone.utc),
+    )
+    mock.build_filter = AsyncMock(return_value=None)
+    mock.search = AsyncMock(return_value=[(chunk, 0.95)])
+    return mock
+
+
+@pytest.fixture
+def embedder_mock() -> MagicMock:
+    """Mock Embedder that returns a fixed vector."""
+    mock = MagicMock(spec=Embedder)
+    mock.embed_query = AsyncMock(return_value=[0.1] * 384)
+    return mock
+
+
+@pytest.fixture
 def service(tracer_mock: MagicMock) -> ODLService:
-    """ODLService with StubAdapter and a no-op tracer."""
+    """ODLService with StubAdapter and a no-op tracer (no Qdrant)."""
     return ODLService(adapters=[StubAdapter()], tracer=tracer_mock)
+
+
+@pytest.fixture
+def qdrant_service(
+    tracer_mock: MagicMock,
+    qdrant_mock: MagicMock,
+    embedder_mock: MagicMock,
+) -> ODLService:
+    """ODLService with Qdrant + Embedder mocks for testing search pipeline."""
+    return ODLService(
+        adapters=[StubAdapter()],
+        tracer=tracer_mock,
+        qdrant=qdrant_mock,
+        embedder=embedder_mock,
+    )
 
 
 # -- search_documents ----------------------------------------------------------
 
 
-class TestSearchDocuments:
-    """search_documents -- content-rich checks."""
+class TestSearchDocumentsWithoutQdrant:
+    """search_documents without Qdrant configured — returns empty results."""
+
+    pytestmark = pytest.mark.asyncio
 
     async def test_returns_search_response(self, service: ODLService) -> None:
         response = await service.search_documents("тест")
         assert isinstance(response, SearchResponse)
 
-    async def test_results_are_search_result_instances(
-        self,
-        service: ODLService,
-    ) -> None:
+    async def test_no_qdrant_returns_empty(self, service: ODLService) -> None:
         response = await service.search_documents("тест")
-        assert len(response.results) > 0
-        for r in response.results:
-            assert isinstance(r, SearchResult)
-
-    async def test_result_fields_are_non_empty(
-        self,
-        service: ODLService,
-    ) -> None:
-        response = await service.search_documents("тест")
-        for r in response.results:
-            assert r.id, "id must be non-empty"
-            assert r.title, "title must be non-empty"
-            assert r.snippet, "snippet must be non-empty"
-            assert r.url, "url must be non-empty"
-            assert r.source_name, "source_name must be non-empty"
-
-    async def test_result_fields_have_correct_types(
-        self,
-        service: ODLService,
-    ) -> None:
-        response = await service.search_documents("тест")
-        for r in response.results:
-            assert isinstance(r.id, str)
-            assert isinstance(r.title, str)
-            assert isinstance(r.snippet, str)
-            assert isinstance(r.url, str)
-            assert isinstance(r.source_name, str)
-            assert isinstance(r.jurisdiction, str | None)
-            assert isinstance(r.region, str | None)
-            assert isinstance(r.topic, list)
-            assert isinstance(r.organization, list)
-            assert isinstance(r.legal_status, LegalStatus)
-            assert isinstance(r.confidence, ConfidenceSignals)
-
-    async def test_total_count_matches_results_length(
-        self,
-        service: ODLService,
-    ) -> None:
-        response = await service.search_documents("тест")
-        assert response.total_count == len(response.results)
+        assert len(response.results) == 0
+        assert response.total_count == 0
 
     async def test_offset_from_context(self, service: ODLService) -> None:
-        """Offset is passed through to SearchResponse (passthrough, not pagination).
-
-        The StubAdapter returns all matching results without slicing, so this
-        test verifies that ODLService correctly mirrors SearchContext.offset
-        into SearchResponse.offset, not that actual pagination occurs.
-        """
         ctx = SearchContext(offset=5)
         response = await service.search_documents("тест", context=ctx)
         assert response.offset == 5
-
-    async def test_search_with_query_filter(
-        self,
-        service: ODLService,
-    ) -> None:
-        """Query filters results -- at least one result for a known query."""
-        response = await service.search_documents("НПА")
-        assert len(response.results) > 0
-
-    async def test_search_no_match_returns_empty(
-        self,
-        service: ODLService,
-    ) -> None:
-        response = await service.search_documents(
-            "xyznonexistent_12345",
-        )
-        assert len(response.results) == 0
-        assert response.total_count == 0
 
     async def test_tracing_is_called(
         self,
         service: ODLService,
         tracer_mock: MagicMock,
     ) -> None:
-        """Verify that search_documents calls tracer.trace with correct args."""
         await service.search_documents("тест")
         tracer_mock.trace.assert_called_once_with(
             "search_documents",
             query="тест",
         )
 
-    async def test_tracing_with_context(
+
+class TestSearchDocumentsWithQdrant:
+    """search_documents with Qdrant mock — tests the Qdrant search pipeline."""
+
+    pytestmark = pytest.mark.asyncio
+
+    async def test_returns_search_response(
         self,
-        service: ODLService,
-        tracer_mock: MagicMock,
+        qdrant_service: ODLService,
     ) -> None:
-        """Verify context is forwarded to the adapter and traced."""
-        ctx = SearchContext(offset=3)
-        # Spy on adapter.search to verify context is forwarded
-        service._adapters[0].search = AsyncMock(wraps=service._adapters[0].search)  # type: ignore[method-assign]
-        await service.search_documents("тест", context=ctx)
-        service._adapters[0].search.assert_awaited_once_with("тест", ctx)
-        tracer_mock.trace.assert_called_once_with(
-            "search_documents",
-            query="тест",
-        )
+        response = await qdrant_service.search_documents("тест")
+        assert isinstance(response, SearchResponse)
+
+    async def test_results_from_qdrant(
+        self,
+        qdrant_service: ODLService,
+    ) -> None:
+        response = await qdrant_service.search_documents("тест")
+        assert len(response.results) > 0
+        for r in response.results:
+            assert isinstance(r, SearchResult)
+
+    async def test_result_fields_from_chunk(
+        self,
+        qdrant_service: ODLService,
+    ) -> None:
+        response = await qdrant_service.search_documents("тест")
+        for r in response.results:
+            assert r.id == "stub-doc-001"
+            assert r.title, "title must be non-empty"
+            assert r.snippet, "snippet must be non-empty"
+
+    async def test_confidence_signals(
+        self,
+        qdrant_service: ODLService,
+    ) -> None:
+        response = await qdrant_service.search_documents("тест")
+        for r in response.results:
+            assert isinstance(r.confidence, ConfidenceSignals)
+            assert 0.0 <= r.confidence.retrieval_relevance <= 1.0
+            assert r.confidence.data_freshness is not None
+            assert r.confidence.data_freshness.year == 2024
+            assert r.confidence.source_availability == SourceAvailability.AVAILABLE
+
+    async def test_total_count_matches_results_length(
+        self,
+        qdrant_service: ODLService,
+    ) -> None:
+        response = await qdrant_service.search_documents("тест")
+        assert response.total_count == len(response.results)
+
+    async def test_build_filter_called(
+        self,
+        qdrant_service: ODLService,
+        qdrant_mock: MagicMock,
+    ) -> None:
+        await qdrant_service.search_documents("тест")
+        qdrant_mock.build_filter.assert_awaited_once()
+
+    async def test_embedder_called(
+        self,
+        qdrant_service: ODLService,
+        embedder_mock: MagicMock,
+    ) -> None:
+        await qdrant_service.search_documents("тест")
+        embedder_mock.embed_query.assert_awaited_once_with("тест")
+
+    async def test_offset_passthrough(
+        self,
+        qdrant_service: ODLService,
+    ) -> None:
+        ctx = SearchContext(offset=1)
+        response = await qdrant_service.search_documents("тест", context=ctx)
+        assert response.offset == 1
 
 
 # -- get_document_detail -------------------------------------------------------
@@ -160,6 +199,8 @@ class TestSearchDocuments:
 
 class TestGetDocumentDetail:
     """get_document_detail -- content-rich checks."""
+
+    pytestmark = pytest.mark.asyncio
 
     async def test_returns_document_detail(self, service: ODLService) -> None:
         detail = await service.get_document_detail("doc-1")
@@ -243,11 +284,280 @@ class TestGetDocumentDetail:
         )
 
 
+class TestGetDocumentDetailWithQdrant:
+    """get_document_detail with Qdrant mock — citations from chunks."""
+
+    pytestmark = pytest.mark.asyncio
+
+    @pytest.fixture
+    def detail_qdrant_mock(self) -> MagicMock:
+        """Mock QdrantStore that returns sample chunks for a document."""
+        mock = MagicMock(spec=QdrantStore)
+        mock.get_chunks_by_document_id = AsyncMock(
+            return_value=[
+                DocumentChunk(
+                    id="chunk-001",
+                    document_id="stub-doc-001",
+                    doc_uuid="uuid-001",
+                    text="Текст первого раздела. Часть первая.",
+                    section_path=["Раздел I"],
+                    chunk_index=0,
+                    section_chunk_index=0,
+                ),
+                DocumentChunk(
+                    id="chunk-002",
+                    document_id="stub-doc-001",
+                    doc_uuid="uuid-001",
+                    text="Текст первого раздела. Часть вторая.",
+                    section_path=["Раздел I"],
+                    chunk_index=1,
+                    section_chunk_index=1,
+                ),
+                DocumentChunk(
+                    id="chunk-003",
+                    document_id="stub-doc-001",
+                    doc_uuid="uuid-001",
+                    text="Текст второго раздела.",
+                    section_path=["Раздел II"],
+                    chunk_index=2,
+                    section_chunk_index=0,
+                ),
+            ],
+        )
+        return mock
+
+    @pytest.fixture
+    def detail_service(
+        self,
+        tracer_mock: MagicMock,
+        detail_qdrant_mock: MagicMock,
+    ) -> ODLService:
+        """ODLService with Qdrant mock for detail testing (no embedder needed)."""
+        return ODLService(
+            adapters=[StubAdapter()],
+            tracer=tracer_mock,
+            qdrant=detail_qdrant_mock,
+        )
+
+    async def test_citations_from_qdrant_chunks(
+        self,
+        detail_service: ODLService,
+    ) -> None:
+        """Citations should come from Qdrant chunks, grouped by section."""
+        detail = await detail_service.get_document_detail("doc-1")
+        assert len(detail.citations) == 2  # Two unique sections
+
+    async def test_citations_have_section_path(
+        self,
+        detail_service: ODLService,
+    ) -> None:
+        """Each citation should have section path from chunks."""
+        detail = await detail_service.get_document_detail("doc-1")
+        sections = {tuple(c.section) for c in detail.citations if c.section}
+        assert ("Раздел I",) in sections
+        assert ("Раздел II",) in sections
+
+    async def test_citation_text_merged_with_overlap(
+        self,
+        detail_service: ODLService,
+    ) -> None:
+        """Chunks from same section should be merged into one citation text."""
+        detail = await detail_service.get_document_detail("doc-1")
+        section1_citations = [c for c in detail.citations if c.section == ["Раздел I"]]
+        assert len(section1_citations) == 1
+        merged = section1_citations[0].text
+        assert "Текст первого раздела. Часть первая." in merged
+        assert "Текст первого раздела. Часть вторая." in merged
+
+    async def test_detail_still_returns_metadata(
+        self,
+        detail_service: ODLService,
+    ) -> None:
+        """Metadata fields should still be present with Qdrant."""
+        detail = await detail_service.get_document_detail("doc-1")
+        assert detail.id, "id must be non-empty"
+        assert detail.title, "title must be non-empty"
+        assert detail.url, "url must be non-empty"
+        assert detail.source_name, "source_name must be non-empty"
+        assert isinstance(detail.toc, list)
+        assert len(detail.toc) > 0
+
+    async def test_get_chunks_by_document_id_called(
+        self,
+        detail_service: ODLService,
+        detail_qdrant_mock: MagicMock,
+    ) -> None:
+        """Verify get_chunks_by_document_id was called with correct doc id."""
+        await detail_service.get_document_detail("doc-1")
+        detail_qdrant_mock.get_chunks_by_document_id.assert_awaited_once_with(
+            "doc-1",
+        )
+
+
+class TestGetDocumentDetailQdrantFallback:
+    """get_document_detail fallback when Qdrant is unavailable or errors."""
+
+    pytestmark = pytest.mark.asyncio
+
+    @pytest.fixture
+    def error_qdrant_mock(self) -> MagicMock:
+        """Mock QdrantStore that raises an exception on get_chunks_by_document_id."""
+        mock = MagicMock(spec=QdrantStore)
+        mock.get_chunks_by_document_id = AsyncMock(
+            side_effect=RuntimeError("Qdrant connection failed"),
+        )
+        return mock
+
+    @pytest.fixture
+    def error_service(
+        self,
+        tracer_mock: MagicMock,
+        error_qdrant_mock: MagicMock,
+    ) -> ODLService:
+        return ODLService(
+            adapters=[StubAdapter()],
+            tracer=tracer_mock,
+            qdrant=error_qdrant_mock,
+        )
+
+    async def test_qdrant_error_falls_back_to_summary(
+        self,
+        error_service: ODLService,
+    ) -> None:
+        """When Qdrant errors, citation should come from summary/title."""
+        detail = await error_service.get_document_detail("doc-1")
+        assert len(detail.citations) == 1
+        assert detail.citations[0].text  # non-empty fallback text
+
+    async def test_qdrant_error_still_returns_metadata(
+        self,
+        error_service: ODLService,
+    ) -> None:
+        """Metadata should still be present even if Qdrant errors."""
+        detail = await error_service.get_document_detail("doc-1")
+        assert detail.id, "id must be non-empty"
+        assert detail.title, "title must be non-empty"
+
+    async def test_no_qdrant_configured_falls_back_to_summary(
+        self,
+        service: ODLService,
+    ) -> None:
+        """Without Qdrant configured, citation is from summary."""
+        detail = await service.get_document_detail("doc-1")
+        assert len(detail.citations) == 1
+        assert detail.citations[0].text  # non-empty fallback text
+
+
+class TestMergeOverlappingChunks:
+    """Static _merge_overlapping_chunks method."""
+
+    def test_single_chunk(self) -> None:
+        chunks = [
+            DocumentChunk(
+                id="c1",
+                document_id="d1",
+                doc_uuid="u1",
+                text="Single chunk text",
+                section_path=["Sec 1"],
+                chunk_index=0,
+                section_chunk_index=0,
+            )
+        ]
+        result = ODLService._merge_overlapping_chunks(chunks)
+        assert result == "Single chunk text"
+
+    def test_empty_list(self) -> None:
+        result = ODLService._merge_overlapping_chunks([])
+        assert result == ""
+
+    def test_no_overlap_joins_with_newline(self) -> None:
+        chunks = [
+            DocumentChunk(
+                id="c1",
+                document_id="d1",
+                doc_uuid="u1",
+                text="First chunk text.",
+                section_path=["Sec 1"],
+                chunk_index=0,
+                section_chunk_index=0,
+            ),
+            DocumentChunk(
+                id="c2",
+                document_id="d1",
+                doc_uuid="u1",
+                text="Second chunk text.",
+                section_path=["Sec 1"],
+                chunk_index=1,
+                section_chunk_index=1,
+            ),
+        ]
+        result = ODLService._merge_overlapping_chunks(chunks)
+        assert "First chunk text." in result
+        assert "Second chunk text." in result
+        assert "\n\n" in result
+
+    def test_overlap_is_trimmed(self) -> None:
+        """When chunks have ≥50 chars overlap, duplicate is removed."""
+        overlap = "x" * 60
+        chunks = [
+            DocumentChunk(
+                id="c1",
+                document_id="d1",
+                doc_uuid="u1",
+                text="Prefix." + overlap,
+                section_path=["Sec 1"],
+                chunk_index=0,
+                section_chunk_index=0,
+            ),
+            DocumentChunk(
+                id="c2",
+                document_id="d1",
+                doc_uuid="u1",
+                text=overlap + ".Suffix",
+                section_path=["Sec 1"],
+                chunk_index=1,
+                section_chunk_index=1,
+            ),
+        ]
+        result = ODLService._merge_overlapping_chunks(chunks)
+        assert result == "Prefix." + overlap + ".Suffix"
+        assert result.count(overlap) == 1  # overlap appears only once
+
+    def test_short_overlap_not_trimmed(self) -> None:
+        """Less than 50 chars overlap is not considered intentional."""
+        overlap = "x" * 30
+        chunks = [
+            DocumentChunk(
+                id="c1",
+                document_id="d1",
+                doc_uuid="u1",
+                text="A" + overlap,
+                section_path=["Sec 1"],
+                chunk_index=0,
+                section_chunk_index=0,
+            ),
+            DocumentChunk(
+                id="c2",
+                document_id="d1",
+                doc_uuid="u1",
+                text=overlap + "B",
+                section_path=["Sec 1"],
+                chunk_index=1,
+                section_chunk_index=1,
+            ),
+        ]
+        result = ODLService._merge_overlapping_chunks(chunks)
+        # Short overlap won't be trimmed — text will be joined with \n\n
+        assert result.count(overlap) == 2
+
+
 # -- list_topics ---------------------------------------------------------------
 
 
 class TestListTopics:
     """list_topics -- content-rich checks."""
+
+    pytestmark = pytest.mark.asyncio
 
     async def test_returns_list_of_topic_nodes(
         self,
@@ -326,6 +636,8 @@ class TestListTopics:
 
 class TestGetToc:
     """get_toc -- content-rich checks."""
+
+    pytestmark = pytest.mark.asyncio
 
     async def test_returns_list_of_toc_nodes(
         self,

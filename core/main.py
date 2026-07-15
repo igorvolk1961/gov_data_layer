@@ -21,6 +21,8 @@ from core.api.config import ConfigError, ServerConfig, instantiate_adapter
 from core.api.mcp_server import create_mcp_server
 from core.api.rest_server import create_app
 from core.cache import CacheClient
+from core.index.qdrant_store import QdrantStore
+from core.ingest.embedder import Embedder
 from core.observability import configure as configure_observability
 from core.observability import get_logger, get_tracer
 from core.observability.logger import VALID_LOG_LEVELS, get_effective_level_name, reconfigure
@@ -156,7 +158,33 @@ def main() -> None:
             "Database client created (PostgreSQL — lazy connect)",
         )
 
-    service = ODLService(adapters=adapters, cache=cache, db=db)
+    # Create Qdrant vector store
+    qdrant_store = QdrantStore(
+        host=app_config.qdrant_host,
+        port=app_config.qdrant_port,
+        vector_size=app_config.embedding.vector_size,
+    )
+    logger.info(
+        "QdrantStore created (%s:%s, vector_size=%d)",
+        app_config.qdrant_host,
+        app_config.qdrant_port,
+        app_config.embedding.vector_size,
+    )
+
+    # Create embedder
+    embedder = Embedder(
+        model_name=app_config.embedding.model,
+        vector_size=app_config.embedding.vector_size,
+    )
+    logger.info(
+        "Embedder created (model=%s, vector_size=%d)",
+        app_config.embedding.model,
+        app_config.embedding.vector_size,
+    )
+
+    service = ODLService(
+        adapters=adapters, cache=cache, db=db, qdrant=qdrant_store, embedder=embedder
+    )
 
     # Create FastAPI app (REST) with cache and db for health check
     app = create_app(service, cache=cache, db=db)

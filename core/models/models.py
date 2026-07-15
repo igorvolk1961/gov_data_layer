@@ -88,9 +88,10 @@ class ConfidenceSignals(BaseModel):
         description="Similarity score ретрива (косинусная близость). "
         "Единственный обязательный сигнал — всегда доступен после поиска.",
     )
-    data_freshness: datetime = Field(
-        description="Дата последнего инжеста данных в индекс. "
-        "Чем свежее, тем выше уверенность в актуальности копии.",
+    data_freshness: datetime | None = Field(
+        default=None,
+        description="Дата вступления в силу раздела документа, которому "
+        "принадлежит чанк (valid_from). None если дата неизвестна.",
     )
     source_availability: SourceAvailability = Field(
         description="Доступность источника на момент запроса. "
@@ -424,4 +425,16 @@ class DocumentChunk(BaseModel):
     section_path: list[str] = Field(default_factory=list, description="Путь по разделам")
     section_external_ids: list[str] = Field(default_factory=list, description="Внешние ID разделов")
     section_uuids: list[str] = Field(default_factory=list, description="UUID разделов в PostgreSQL")
-    chunk_index: int = Field(default=0, ge=0, description="Порядковый номер чанка")
+    chunk_index: int = Field(default=0, ge=0, description="Порядковый номер чанка в документе")
+    section_chunk_index: int = Field(
+        default=0,
+        ge=0,
+        description="Порядковый номер чанка в пределах его раздела (section_path). "
+        "Используется для сборки цитат: чанки одного раздела упорядочиваются "
+        "по section_chunk_index и объединяются в одну цитату.",
+    )
+    data_freshness: datetime | None = Field(
+        default=None,
+        description="Дата свежести данных чанка. Для НПА — дата вступления в силу "
+        "(valid_from) документа/раздела. None если дата неизвестна.",
+    )

@@ -12,16 +12,23 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from core.cache import CacheClient
 from core.errors import NotFoundError
+from core.index.qdrant_store import QdrantStore
+from core.ingest.embedder import Embedder
 from core.models.models import (
     Citation,
+    ConfidenceSignals,
+    DocumentChunk,
     DocumentDetail,
+    LegalStatus,
     SearchContext,
     SearchResponse,
     SearchResult,
+    SourceAvailability,
     TocNode,
     TopicNode,
 )
@@ -62,11 +69,15 @@ class ODLService(ODLServiceProtocol):
         tracer: Tracer | None = None,
         cache: CacheClient | None = None,
         db: DatabaseClient | None = None,
+        qdrant: QdrantStore | None = None,
+        embedder: Embedder | None = None,
     ) -> None:
         self._adapters = list(adapters)
         self._tracer: Tracer | None = tracer
         self._cache: CacheClient | None = cache
         self._db: DatabaseClient | None = db
+        self._qdrant: QdrantStore | None = qdrant
+        self._embedder: Embedder | None = embedder
         self._doc_repo: DocumentRepository | None = None
         self._ref_repo: ReferenceRepository | None = None
         self._section_repo: SectionRepository | None = None
@@ -118,6 +129,18 @@ class ODLService(ODLServiceProtocol):
         if self._change_repo is None and self._db is not None:
             self._change_repo = ChangeTrackingRepository(self._db)
         return self._change_repo
+
+    @property
+    def _embedder_lazy(self) -> Embedder:
+        """Lazy init of Embedder."""
+        if self._embedder is None:
+            self._embedder = Embedder()
+        return self._embedder
+
+    @property
+    def _qdrant_lazy(self) -> QdrantStore | None:
+        """Lazy access to QdrantStore."""
+        return self._qdrant
 
     async def _persist_document(
         self,
@@ -187,30 +210,88 @@ class ODLService(ODLServiceProtocol):
         query: str,
         context: SearchContext | None = None,
     ) -> SearchResponse:
-        """Поиск документов по всем адаптерам с агрегацией результатов."""
-        with self.tracer.trace("search_documents", query=query) as span:
-            span.set_input(
-                {
-                    "query": query,
-                    "context": context.model_dump(mode="json") if context else None,
-                }
-            )
-            all_results: list[SearchResult] = []
-            for adapter in self._adapters:
-                try:
-                    results = await adapter.search(query, context)
-                    all_results.extend(results)
-                except Exception:
-                    logger.exception(
-                        "Adapter %s failed during search — skipping",
-                        adapter.source_id,
+        """Поиск документов через Qdrant с обогащением из PostgreSQL.
+
+        Векторный поиск по Qdrant → обогащение метаданных документа
+        (url, source_name, title) из реляционной БД.
+        Если БД недоступна — возвращаются только данные из Qdrant.
+        """
+        ctx = context or SearchContext()
+        offset = ctx.offset
+        max_results = ctx.max_results
+        results: list[SearchResult] = []
+
+        with self.tracer.trace("search_documents", query=query[:100]) as span:
+            span.set_input(ctx.model_dump(mode="json"))
+
+            if self._qdrant is None:
+                span.set_output({"total_count": 0, "reason": "qdrant_not_configured"})
+                return SearchResponse(results=[], total_count=0, offset=offset)
+
+            try:
+                embedder = self._embedder_lazy
+                query_vector = await embedder.embed_query(query)
+                filters = await self._qdrant.build_filter()
+
+                with self.tracer.trace("search.qdrant") as qspan:
+                    qdrant_chunks = await self._qdrant.search(
+                        query_embedding=query_vector,
+                        filters=filters,
+                        limit=max_results + offset,
                     )
+                    qspan.set_output({"hits": len(qdrant_chunks)})
+
+                page_chunks = qdrant_chunks[offset : offset + max_results]
+
+                # Обогащение из PostgreSQL
+                doc_repo = self._doc_repo_lazy
+
+                for chunk, score in page_chunks:
+                    url = ""
+                    source_name = ""
+                    doc_title = chunk.text[:120] + ("…" if len(chunk.text) > 120 else "")
+
+                    if doc_repo is not None:
+                        with self.tracer.trace("search.pg_lookup") as pspan:
+                            try:
+                                doc_meta = await doc_repo.get_document_by_id(chunk.document_id)
+                                if doc_meta is not None:
+                                    url = doc_meta.url or ""
+                                    source_name = doc_meta.source.name if doc_meta.source else ""
+                                    doc_title = doc_meta.title or doc_title
+                                    pspan.set_output({"found": True})
+                                else:
+                                    pspan.set_output({"found": False})
+                            except Exception:
+                                pspan.set_output({"found": False})
+
+                    result = SearchResult(
+                        id=chunk.document_id,
+                        title=doc_title,
+                        snippet=chunk.text[:300] + ("…" if len(chunk.text) > 300 else ""),
+                        url=url,
+                        source_name=source_name,
+                        created_at=datetime.now(timezone.utc),
+                        legal_status=LegalStatus.UNKNOWN,
+                        confidence=ConfidenceSignals(
+                            retrieval_relevance=score,
+                            data_freshness=chunk.data_freshness,
+                            source_availability=SourceAvailability.AVAILABLE,
+                        ),
+                    )
+                    results.append(result)
+
+            except Exception as exc:
+                with self.tracer.trace("search.qdrant_error") as espan:
+                    espan.set_error(exc)
+                    espan.set_output({"error": str(exc)[:200]})
+
             response = SearchResponse(
-                results=all_results,
-                total_count=len(all_results),
-                offset=context.offset if context else 0,
+                results=results,
+                total_count=len(results),
+                offset=offset,
             )
-            span.set_output({"total_count": response.total_count, "offset": response.offset})
+            span.set_output({"total_count": response.total_count})
             return response
 
     async def get_document_detail(
@@ -219,10 +300,15 @@ class ODLService(ODLServiceProtocol):
     ) -> DocumentDetail:
         """Полная карточка документа — делегирует адаптеру по source_id.
 
-        После получения документа от адаптера сохраняет его в PostgreSQL
-        (если DatabaseClient передан в конструктор). Ошибка БД не ломает
-        ответ — данные возвращаются агенту, ошибка логируется и пишется
-        в tracer.
+        После получения документа от адаптера:
+        1. Пытается найти чанки документа в Qdrant (через document_id).
+        2. Группирует чанки по section_path, объединяет тексты с учётом
+           перекрытия, создаёт по одной Citation на раздел.
+        3. Если Qdrant недоступен или чанков нет — текущее поведение
+           (Citation из summary/title).
+
+        Затем сохраняет документ в PostgreSQL (если DatabaseClient передан).
+        Ошибка БД не ломает ответ — данные возвращаются агенту.
         """
         with self.tracer.trace("get_document_detail", source_id=source_id) as span:
             span.set_input({"source_id": source_id})
@@ -231,15 +317,12 @@ class ODLService(ODLServiceProtocol):
             try:
                 toc = await adapter.get_toc(document_id=doc.id)
             except NotFoundError:
-                # Document exists but TOC not found — return empty TOC
-                # rather than failing the entire document detail request.
-                # This can happen if the adapter hasn't indexed the TOC yet.
-                logger.warning(
-                    "TOC not found for document %s (source_id=%s) — returning empty TOC",
-                    doc.id,
-                    source_id,
-                )
+                with self.tracer.trace("detail.toc_not_found") as toc_span:
+                    toc_span.set_input({"document_id": doc.id, "source_id": source_id})
                 toc = []
+
+            # Build citations from Qdrant chunks (if available)
+            citations = await self._build_citations_from_qdrant(doc, toc)
 
             detail = DocumentDetail(
                 id=doc.id,
@@ -254,14 +337,7 @@ class ODLService(ODLServiceProtocol):
                 valid_from=doc.valid_from,
                 valid_to=doc.valid_to,
                 legal_status=doc.legal_status,
-                citations=[
-                    Citation(
-                        text=doc.summary or doc.title,
-                        source_id=doc.id,
-                        url=doc.url,
-                        section=[toc[0].title] if toc else None,
-                    ),
-                ],
+                citations=citations,
                 toc=toc,
             )
             span.set_output({"document_id": detail.id, "title": detail.title})
@@ -271,11 +347,6 @@ class ODLService(ODLServiceProtocol):
         try:
             await self._persist_document(doc, source_id, toc)
         except Exception as exc:
-            logger.exception(
-                "Failed to persist document %s (source=%s) — returning detail without persistence",
-                doc.id,
-                source_id,
-            )
             with self.tracer.trace("persistence.failed") as span:
                 span.set_input(
                     {
@@ -286,6 +357,118 @@ class ODLService(ODLServiceProtocol):
                 span.set_error(exc)
 
         return detail
+
+    async def _build_citations_from_qdrant(
+        self,
+        doc: OfficialDocument,
+        toc: list[TocNode],
+    ) -> list[Citation]:
+        """Build citations from Qdrant chunks, falling back to summary if unavailable.
+
+        Groups chunks by section_path, merges with overlap handling,
+        creates one Citation per section.
+        """
+        qdrant = self._qdrant_lazy
+        if qdrant is not None:
+            try:
+                chunks = await qdrant.get_chunks_by_document_id(doc.id)
+                if chunks:
+                    return self._merge_chunks_to_citations(chunks, doc)
+            except Exception as exc:
+                with self.tracer.trace("detail.qdrant_error") as span:
+                    span.set_input({"document_id": doc.id})
+                    span.set_error(exc)
+
+        # Fallback: one citation from summary / title
+        return [
+            Citation(
+                text=doc.summary or doc.title,
+                source_id=doc.id,
+                url=doc.url,
+                section=[toc[0].title] if toc else None,
+            ),
+        ]
+
+    @staticmethod
+    def _merge_chunks_to_citations(
+        chunks: list[DocumentChunk],
+        doc: OfficialDocument,
+    ) -> list[Citation]:
+        """Merge chunks grouped by section_path into one Citation per section.
+
+        Chunks are already sorted by (section_path, section_chunk_index)
+        from QdrantStore.get_chunks_by_document_id.
+
+        Overlap handling: for consecutive chunks in the same section,
+        detects suffix/prefix overlap and trims the duplicate portion
+        before concatenation.
+        """
+        citations: list[Citation] = []
+
+        # Group by section_path (preserving original order)
+        grouped: dict[str, list[DocumentChunk]] = {}
+        group_order: list[str] = []
+        for chunk in chunks:
+            key = "|".join(chunk.section_path)
+            if key not in grouped:
+                grouped[key] = []
+                group_order.append(key)
+            grouped[key].append(chunk)
+
+        for key in group_order:
+            group = grouped[key]
+            merged = ODLService._merge_overlapping_chunks(group)
+            section = group[0].section_path if group[0].section_path else None
+
+            citations.append(
+                Citation(
+                    text=merged,
+                    source_id=doc.id,
+                    url=doc.url,
+                    section=section,
+                )
+            )
+
+        return citations
+
+    @staticmethod
+    def _merge_overlapping_chunks(chunks: list[DocumentChunk]) -> str:
+        """Merge chunk texts with overlap trimming.
+
+        Chunks are ordered by section_chunk_index (ascending).
+        For each consecutive pair, if the end of the previous chunk
+        overlaps with the start of the next chunk (≥50 chars match),
+        the overlapping portion is removed from the next chunk.
+
+        If no overlap is detected, chunks are joined with a space.
+        """
+        if not chunks:
+            return ""
+        if len(chunks) == 1:
+            return chunks[0].text
+
+        result = chunks[0].text
+        for i in range(1, len(chunks)):
+            prev = result
+            curr = chunks[i].text
+
+            # Find maximum overlap between end of prev and start of curr
+            overlap_len = 0
+            min_overlap = 50  # minimum chars to consider as intentional overlap
+            max_check = min(len(prev), len(curr), 500)  # don't check beyond 500 chars
+
+            for n in range(max_check, min_overlap - 1, -1):
+                if prev[-n:] == curr[:n]:
+                    overlap_len = n
+                    break
+
+            if overlap_len >= min_overlap:
+                result = prev + curr[overlap_len:]
+            else:
+                # No significant overlap — join with separator
+                result = prev + ("\n\n" if prev and curr else "") + curr
+
+        return result
 
     async def list_topics(
         self,
