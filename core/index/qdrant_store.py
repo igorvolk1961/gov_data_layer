@@ -15,6 +15,12 @@ from core.models.models import DocumentChunk
 
 logger = logging.getLogger(__name__)
 
+
+def _date_to_timestamp(d: date) -> float:
+    """Convert a date to Unix timestamp (seconds since epoch) for Qdrant numeric comparison."""
+    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp()
+
+
 _HAS_QDRANT = False
 try:
     from qdrant_client import QdrantClient as _QdrantClient
@@ -162,7 +168,7 @@ class QdrantStore:
             if chunk.data_freshness is not None:
                 payload["data_freshness"] = chunk.data_freshness.isoformat()
             if chunk.not_actual_since is not None:
-                payload["not_actual_since"] = chunk.not_actual_since.isoformat()
+                payload["not_actual_since"] = _date_to_timestamp(chunk.not_actual_since)
 
             points.append(
                 _qdrant_models.PointStruct(
@@ -193,16 +199,16 @@ class QdrantStore:
         """
         if not _HAS_QDRANT:
             return None
-        now_str = datetime.now(timezone.utc).date().isoformat()
+        now_ts = _date_to_timestamp(datetime.now(timezone.utc).date())
         return _qdrant_models.Filter(
             should=[
                 _qdrant_models.FieldCondition(
                     key="not_actual_since",
-                    is_null=_qdrant_models.IsNullCondition(is_null=True),
+                    is_empty=True,
                 ),
                 _qdrant_models.FieldCondition(
                     key="not_actual_since",
-                    range=_qdrant_models.Range(gt=now_str),
+                    range=_qdrant_models.Range(gt=now_ts),
                 ),
             ],
         )
@@ -219,9 +225,9 @@ class QdrantStore:
 
         nas_raw = payload.get("not_actual_since")
         not_actual_since: date | None = None
-        if isinstance(nas_raw, str):
-            with contextlib.suppress(ValueError, TypeError):
-                not_actual_since = date.fromisoformat(nas_raw)
+        if isinstance(nas_raw, (int, float)):
+            with contextlib.suppress(ValueError, TypeError, OverflowError):
+                not_actual_since = datetime.fromtimestamp(nas_raw, tz=timezone.utc).date()
 
         return DocumentChunk(
             id=str(point.id),
@@ -292,7 +298,7 @@ class QdrantStore:
         # Set not_actual_since on all matching points
         client.set_payload(
             collection_name=self._collection,
-            payload={"not_actual_since": effective_date.isoformat()},
+            payload={"not_actual_since": _date_to_timestamp(effective_date)},
             points=point_ids,
         )
         logger.info(

@@ -174,8 +174,9 @@ class TestSearchDocumentsWithQdrant:
         qdrant_service: ODLService,
         qdrant_mock: MagicMock,
     ) -> None:
+        """search() now calls build_filter() internally — verify search is called without explicit filters."""
         await qdrant_service.search_documents("тест")
-        qdrant_mock.build_filter.assert_awaited_once()
+        qdrant_mock.search.assert_awaited_once()
 
     async def test_embedder_called(
         self,

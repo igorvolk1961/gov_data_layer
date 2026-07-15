@@ -230,12 +230,10 @@ class ODLService(ODLServiceProtocol):
             try:
                 embedder = self._embedder_lazy
                 query_vector = await embedder.embed_query(query)
-                filters = await self._qdrant.build_filter()
 
                 with self.tracer.trace("search.qdrant") as qspan:
                     qdrant_chunks = await self._qdrant.search(
                         query_embedding=query_vector,
-                        filters=filters,
                         limit=max_results + offset,
                     )
                     qspan.set_output({"hits": len(qdrant_chunks)})
