@@ -111,14 +111,36 @@ async def process_document_text(
                     span.set_output({"error": str(exc)[:200]})
                     # Non-fatal — chunks without section_uuids still work
 
-        # 3. Embed
+        # 3. Semantic analysis + persistence of legal facts (stub, DB only)
+        if resolved_section_uuids and doc_uuid and section_repo is not None:
+            span = _NullSpan() if tracer is None else tracer.trace("pipeline.analyze_sections")
+            with span:
+                try:
+                    from core.analyzer import SectionAnalyzer
+                    from core.persistence.repository import ChangeTrackingRepository
+
+                    analyzer = SectionAnalyzer()
+                    ct_repo = ChangeTrackingRepository(section_repo._db)
+                    all_facts: list = []
+                    for chunk in chunks:
+                        sec_ext_id = chunk.section_external_ids[0] if chunk.section_external_ids else ""
+                        facts = analyzer.analyze(chunk.text, sec_ext_id)
+                        all_facts.extend(facts)
+                    if all_facts:
+                        await ct_repo.save_analysis_facts(all_facts, doc_uuid, resolved_section_uuids)
+                        span.set_output({"facts_saved": len(all_facts)})
+                except Exception as exc:
+                    span.set_error(exc)
+                    span.set_output({"error": str(exc)[:200]})
+
+        # 5. Embed
         with tracer.trace("pipeline.embed") if tracer else _null_context():
             texts = [c.text for c in chunks]
             embeddings = await embedder.embed(texts)
             for chunk, emb in zip(chunks, embeddings, strict=True):
                 chunk.embedding = emb
 
-        # 4. Store in Qdrant
+        # 6. Store in Qdrant
         with tracer.trace("pipeline.qdrant_upsert") if tracer else _null_context():
             await qdrant.upsert_chunks(chunks)
 

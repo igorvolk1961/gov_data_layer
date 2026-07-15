@@ -196,6 +196,93 @@ class ChangeTrackingRepository:
         ]
 
 
+    async def resolve_target_document_id(
+        self,
+        search_text: str | None,
+    ) -> str | None:
+        """Try to find a document UUID by title or document_number using trigram similarity.
+
+        Args:
+            search_text: Raw text containing a document number or name (e.g. "№ 123-ФЗ").
+
+        Returns:
+            Document UUID string if a match is found, None otherwise.
+        """
+        if not search_text:
+            return None
+
+        # Try exact match on document_number first
+        row = await self._db.fetchval(
+            """
+            SELECT id FROM document
+            WHERE document_number = $1
+            LIMIT 1
+            """,
+            search_text,
+        )
+        if row is not None:
+            return str(row)
+
+        # Try trigram similarity search on title
+        row = await self._db.fetchval(
+            """
+            SELECT id FROM document
+            WHERE title % $1
+            ORDER BY similarity(title, $1) DESC
+            LIMIT 1
+            """,
+            search_text,
+        )
+        return str(row) if row is not None else None
+
+    async def save_analysis_facts(
+        self,
+        facts: list,
+        current_doc_uuid: str,
+        section_uuids: dict[str, str],
+    ) -> None:
+        """Persist SectionFact objects to the appropriate DB tables.
+
+        For REVOKE facts → document_revocation table.
+        For MODIFY facts → document_section_modification table (if section UUIDs available).
+
+        Args:
+            facts: List of SectionFact objects from the analyzer.
+            current_doc_uuid: UUID of the current document being ingested.
+            section_uuids: Dict mapping section external_id → UUID.
+        """
+        for fact in facts:
+            effective_date = (
+                datetime.combine(fact.effective_date, datetime.min.time())
+                if fact.effective_date
+                else None
+            )
+
+            if fact.fact_type.value in ("revoke", "modify"):
+                # Try to resolve the target document
+                target_doc_uuid = await self.resolve_target_document_id(
+                    fact.target_document_id
+                )
+
+                if target_doc_uuid is None:
+                    continue  # Cannot persist without a known target
+
+                if fact.fact_type.value == "revoke":
+                    await self.add_document_revocation(
+                        revoking_document_id=current_doc_uuid,
+                        revoked_document_id=target_doc_uuid,
+                        effective_date=effective_date,
+                    )
+                elif fact.fact_type.value == "modify":
+                    # For MODIFY, link to all sections of the current document
+                    for sec_ext_id, sec_uuid in section_uuids.items():
+                        await self.add_section_modification(
+                            section_id=sec_uuid,
+                            modifying_document_id=target_doc_uuid,
+                            effective_date=effective_date,
+                        )
+
+
 __all__ = [
     "ChangeTrackingRepository",
     "ModificationRecord",

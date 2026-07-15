@@ -126,14 +126,16 @@ flowchart TD
 
 ### Phase C: Обогащение ответа (Steps 7-8)
 
-#### Шаг 7: Семантический анализ разделов MVP (TD-9)
-**Файлы:** `core/analyzer/section_analyzer.py` (новый)
+#### Шаг 7: Семантический анализ разделов MVP (TD-9) ✅ (stub)
+**Файлы:** [`core/analyzer/section_analyzer.py`](core/analyzer/section_analyzer.py), [`core/analyzer/__init__.py`](core/analyzer/__init__.py)
 
-1. `SectionAnalyzer.analyze(text) → list[SectionFact]`
-2. Паттерны: `признать утратившим силу` → `REVOKE`, `внести изменения` → `MODIFY`, `ввести в действие` → `ENACT`
-3. Сохранять факты в `change_tracking` и `document_relation`
+1. ✅ `SectionAnalyzer.analyze(text) → list[SectionFact]` — stub на regexp
+2. ✅ Паттерны: `признать утратившим силу` → `REVOKE` (0.95), `внести изменения` → `MODIFY` (0.85), `изложить в новой редакции` → `MODIFY` (0.90), `ввести в действие` → `ENACT` (0.90)
+3. ⏳ Сохранять факты в БД — **отложено**, полный семантический анализ (NER/LLM) выходит за рамки PoC
+4. ✅ Каждый факт содержит `extraction_confidence` и `target_document_id`
+5. ✅ 18 unit-тестов (REVOKE/MODIFY/ENACT/RELATE/dedup/edge cases)
 
-**Критерий:** Для тестового документа определяются типы разделов.
+**Критерий:** Для тестового документа определяются типы разделов через regexp.
 
 #### Шаг 8: Определение актуальности MVP (TD-11)
 **Файлы:** `core/persistence/repository/document_repo.py`
