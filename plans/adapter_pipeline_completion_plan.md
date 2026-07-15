@@ -100,11 +100,11 @@ flowchart LR
 
     Get -->|OfficialDocument| DocRepo
     GetTOC -->|TocNode[]| SectionRepo
-    
+
     GetContent -->|text| Chunker
     DocRepo -->|doc_uuid| Chunker
     SectionRepo -->|section_uuids| Chunker
-    
+
     Chunker -->|Chunk[]| Embedder
     Embedder -->|vectors + payload| QdrantStore
 ```
@@ -150,7 +150,7 @@ from smart_chunker import HierarchyParser, SectionChunker, SectionNode
 
 class GovHierarchyParser(HierarchyParser):
     """Кастомный парсер для НПА РФ.
-    
+
     Добавляет поддержку заголовков:
     - Раздел I, Раздел 1
     - Глава 1, Глава 1.1
@@ -188,16 +188,16 @@ class DocStructSplitter:
 
     def _split_with_smart_chunker(self, text, document_id, doc_uuid, section_uuids):
         from smart_chunker import HierarchyParser, SectionChunker
-        
+
         parser = HierarchyParser()
         sections = parser.parse_hierarchy(text)
-        
+
         chunker = SectionChunker(
             max_chunk_size=self._max_chunk_size,
             chunk_overlap=self._chunk_overlap,
         )
         smart_chunks = chunker.generate_chunks(sections, target_level=3)
-        
+
         # Конвертация smart_chunker.Chunk → DocumentChunk
         result = []
         for i, sc in enumerate(smart_chunks):
@@ -240,7 +240,7 @@ smart_chunker@git+https://github.com/igorvolk1961/smart_chunker.git
 ```python
 class DocumentChunk(BaseModel):
     """Чанк документа с метаданными для Qdrant."""
-    
+
     id: str                          # Уникальный ID чанка (UUID)
     document_id: str                 # Внешний ID документа (source_id-publish_id)
     doc_uuid: str                    # UUID записи в таблице document (PostgreSQL)
@@ -327,30 +327,30 @@ class ProductionIngestHandler(BaseIngestHandler):
         for raw_doc in self._fetch_documents():
             # 1. Get + persist metadata (already done in get())
             doc = await adapter.get(document_id)
-            
+
             # 2. Get content via OCR
             text = await adapter.get_content(document_id)
-            
+
             # 3. Extract and persist TOC
             toc = await adapter.get_toc(document_id)
-            
+
             # 4. Get doc_uuid from DB (we just persisted it)
             doc_uuid = await adapter._doc_repo_lazy.get_document_by_publish_id(doc.publish_id)
-            
+
             # 5. Get section UUIDs from DB
             section_uuids = await adapter._section_repo_lazy.get_section_uuids(doc_uuid)
-            
+
             # 6. Chunk
             chunks = chunker.split_text(text, doc.id, doc_uuid, section_uuids)
-            
+
             # 7. Embed
             embeddings = await embedder.embed([c.text for c in chunks])
             for chunk, emb in zip(chunks, embeddings):
                 chunk.embedding = emb
-            
+
             # 8. Store in Qdrant
             await qdrant_store.upsert_chunks(chunks)
-            
+
             count += 1
         return count
 ```
@@ -361,17 +361,17 @@ class ProductionIngestHandler(BaseIngestHandler):
 
 ```python
 class Embedder:
-    """Text embedder using sentence-transformers with bge-m3 model."""
+    """Text embedder using sentence-transformers with sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 model."""
 
-    def __init__(self, model_name: str = "BAAI/bge-m3"):
+    def __init__(self, model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"):
         self._model = SentenceTransformer(model_name)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts.
-        
+
         Args:
             texts: List of text strings to embed.
-            
+
         Returns:
             List of embedding vectors.
         """
@@ -379,10 +379,10 @@ class Embedder:
 
     async def embed_query(self, query: str) -> list[float]:
         """Embed a single query string (for search).
-        
+
         Args:
             query: Search query text.
-            
+
         Returns:
             Single embedding vector.
         """
@@ -410,7 +410,7 @@ class QdrantStore:
         host: str = "localhost",
         port: int = 6333,
         collection: str = "documents",
-        vector_size: int = 1024,  # bge-m3 default
+        vector_size: int = 1024,  # sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 default
     ):
         ...
 
@@ -420,7 +420,7 @@ class QdrantStore:
 
     async def upsert_chunks(self, chunks: list[DocumentChunk]) -> None:
         """Insert or update chunks with embeddings.
-        
+
         Payload:
         - document_id: str  (source-publish_id)
         - doc_uuid: str     (PostgreSQL UUID)
@@ -439,12 +439,12 @@ class QdrantStore:
         limit: int = 10,
     ) -> list[tuple[DocumentChunk, float]]:
         """Semantic search with payload filtering.
-        
+
         Args:
             query_embedding: Query vector.
             filters: Optional payload filters (e.g. {"document_id": "pravo-..."}).
             limit: Max results.
-            
+
         Returns:
             List of (chunk, score) tuples.
         """
@@ -522,7 +522,7 @@ flowchart TB
 
     subgraph ingest["core/ingest/"]
         Chunker["DocStructSplitter"]
-        Embedder["Embedder bge-m3"]
+        Embedder["Embedder sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"]
         Init["__init__.py<br/>exports"]
     end
 
@@ -573,7 +573,7 @@ flowchart TB
 
 ### Создать:
 1. `core/ingest/chunker.py` — DocStructSplitter
-2. `core/ingest/embedder.py` — Embedder (bge-m3)
+2. `core/ingest/embedder.py` — Embedder (paraphrase-multilingual-MiniLM)
 3. `core/index/__init__.py` — обновить (убрать заглушку)
 4. `core/index/qdrant_store.py` — QdrantStore
 5. `adapters/pravo/adapter/production/get_toc.py` — ProductionGetTocHandler

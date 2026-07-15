@@ -38,6 +38,7 @@ class QdrantStore:
         port: int = 6333,
         collection: str = "documents",
         vector_size: int = 384,
+        disabled: bool = False,
     ) -> None:
         """Initialize QdrantStore.
 
@@ -45,16 +46,24 @@ class QdrantStore:
             host: Qdrant host.
             port: Qdrant gRPC/REST port.
             collection: Collection name.
-            vector_size: Embedding vector dimension (default: 384 for paraphrase-multilingual-MiniLM-L12-v2).
+            vector_size: Embedding vector dimension (default: 384 for sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2).
+            disabled: If True, all operations are no-ops (for testing without Qdrant).
         """
         self._host = host
         self._port = port
         self._collection = collection
         self._vector_size = vector_size
+        self._disabled = disabled
         self._client: Any = None
 
     async def _get_client(self) -> Any:
-        """Lazy-init Qdrant client."""
+        """Lazy-init Qdrant client.
+
+        Returns None if disabled (for testing without Qdrant)
+        or if qdrant-client is not installed.
+        """
+        if self._disabled:
+            return None
         if self._client is None and _HAS_QDRANT:
             self._client = _QdrantClient(host=self._host, port=self._port)
         return self._client
@@ -62,7 +71,9 @@ class QdrantStore:
     async def ensure_collection(self) -> None:
         """Create collection if it doesn't exist.
 
-        Safe to call multiple times — skips if already exists.
+        If collection exists but with a different vector_size (e.g. after
+        switching embedding models), the collection is automatically deleted
+        and recreated with the correct dimension.
         """
         client = await self._get_client()
         if client is None:
@@ -73,8 +84,21 @@ class QdrantStore:
         existing = {c.name for c in collections}
 
         if self._collection in existing:
-            logger.info("Collection '%s' already exists", self._collection)
-            return
+            # Validate vector_size — recreate if dimension mismatch
+            info = client.get_collection(self._collection)
+            actual_size = info.config.params.vectors.size
+            if actual_size != self._vector_size:
+                logger.warning(
+                    "Collection '%s' has vector_size=%d, expected %d — recreating",
+                    self._collection,
+                    actual_size,
+                    self._vector_size,
+                )
+                client.delete_collection(self._collection)
+                # Fall through to create_collection below
+            else:
+                logger.info("Collection '%s' already exists", self._collection)
+                return
 
         logger.info(
             "Creating collection '%s' (vector_size=%d)", self._collection, self._vector_size
@@ -90,12 +114,12 @@ class QdrantStore:
         client.create_payload_index(
             collection_name=self._collection,
             field_name="document_id",
-            field_type=_qdrant_models.PayloadSchemaType.KEYWORD,
+            field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
         )
         client.create_payload_index(
             collection_name=self._collection,
             field_name="doc_uuid",
-            field_type=_qdrant_models.PayloadSchemaType.KEYWORD,
+            field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
         )
 
     async def upsert_chunks(self, chunks: list[DocumentChunk]) -> None:

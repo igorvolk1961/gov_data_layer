@@ -8,7 +8,7 @@ Tests the full pipeline with real Russian NPA OCR text:
 Requirements:
     - smart_chunker installed (see pyproject.toml)
     - Qdrant running on localhost:6333 for Qdrant-specific tests
-    - sentence-transformers + paraphrase-multilingual-MiniLM-L12-v2 for real embeddings (optional)
+    - sentence-transformers + sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 for real embeddings (optional)
 """
 
 from __future__ import annotations
@@ -33,7 +33,10 @@ logger = logging.getLogger(__name__)
 _TEST_PDF_DIR = Path(__file__).parents[2] / "tests" / "data" / "pdf"
 
 # Real OCR output: Закон Санкт-Петербурга (2 pages, ~2753 chars)
-TEST_OCR_TEXT = (_TEST_PDF_DIR / "7800202607010012.yandex_vision.txt").read_text(encoding="utf-8")
+OCR_PATH = _TEST_PDF_DIR / "7800202607010012.yandex_vision.txt"
+TEST_OCR_TEXT: str | None = None
+if OCR_PATH.exists():
+    TEST_OCR_TEXT = OCR_PATH.read_text(encoding="utf-8")
 
 # Multi-page document for larger test (35 pages, ~95K chars)
 _BIG_OCR_PATH = _TEST_PDF_DIR / "0001202012230060.yandex_vision.txt"
@@ -135,7 +138,6 @@ class TestDocStructSplitterWithRealText:
 # ── Embedder integration ────────────────────────────────────────────
 
 
-@pytest.mark.slow
 @pytest.mark.embedding
 class TestEmbedderIntegration:
     """Test Embedder with real text (stub mode uses zero vectors)."""
@@ -184,7 +186,6 @@ class TestEmbedderIntegration:
     not _check_qdrant(),
     reason="Qdrant not running on localhost:6333",
 )
-@pytest.mark.slow
 @pytest.mark.embedding
 class TestFullPipeline:
     """Test the full chunk → embed → Qdrant pipeline.
@@ -301,7 +302,6 @@ class TestFullPipeline:
 # ── process_document_text without Qdrant ────────────────────────────
 
 
-@pytest.mark.slow
 @pytest.mark.embedding
 class TestPipelineWithoutQdrant:
     """Test process_document_text without a real Qdrant connection.
@@ -310,13 +310,19 @@ class TestPipelineWithoutQdrant:
     Qdrant upsert will be silently skipped/fallback).
     """
 
+    @pytest.fixture
+    def disabled_qdrant(self) -> QdrantStore:
+        """A QdrantStore in disabled mode — all operations are no-ops."""
+        return QdrantStore(disabled=True)
+
     @pytest.mark.asyncio
-    async def test_pipeline_no_qdrant_still_works(self) -> None:
-        """When Qdrant is not provided, pipeline should still return chunks and TOC."""
+    async def test_pipeline_no_qdrant_still_works(self, disabled_qdrant: QdrantStore) -> None:
+        """When Qdrant is disabled, pipeline should still return chunks and TOC."""
         chunks, toc = await process_document_text(
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-doc-uuid",
+            qdrant=disabled_qdrant,
         )
         assert isinstance(chunks, list)
         assert isinstance(toc, list)
@@ -325,12 +331,13 @@ class TestPipelineWithoutQdrant:
             assert c.embedding is not None
 
     @pytest.mark.asyncio
-    async def test_pipeline_consistent_document_id(self) -> None:
+    async def test_pipeline_consistent_document_id(self, disabled_qdrant: QdrantStore) -> None:
         """Both chunks and TOC should use the same document_id."""
         chunks, toc = await process_document_text(
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-uuid",
+            qdrant=disabled_qdrant,
         )
         for c in chunks:
             assert c.document_id == "pravo-7800202607010012"

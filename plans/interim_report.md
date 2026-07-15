@@ -44,12 +44,12 @@
 | Swagger UI | ✅ | Автоматически на /docs |
 
 ### 1.5 Ingest Pipeline ✅
-| Компонент | Статус |
-|-----------|--------|
-| DocStructSplitter (smart_chunker) | ✅ | Структурный чанкинг русских НПА |
-| Embedder (bge-m3 / paraphrase-multilingual-MiniLM) | ✅ | Сменяемая модель эмбеддингов |
-| OCR: Yandex Vision + Tesseract + Stub | ✅ | 3 реализации OCRProvider |
-| Circuit Breaker + Progressive Backoff | ✅ | Для внешних API и БД |
+| Компонент                                    | Статус |
+|----------------------------------------------|--------|
+| DocStructSplitter (smart_chunker)            | ✅ | Структурный чанкинг русских НПА |
+| Embedder (paraphrase-multilingual-MiniLM / bge-m3) | ✅ | Сменяемая модель эмбеддингов |
+| OCR: Yandex Vision + Tesseract + Stub        | ✅ | 3 реализации OCRProvider |
+| Circuit Breaker + Progressive Backoff        | ✅ | Для внешних API и БД |
 
 ### 1.6 Persistence-слой ✅
 | Компонент | Статус |
@@ -87,13 +87,12 @@
 
 ### 2.1. Критический долг ⚠️
 
-| # | Проблема | Описание | Файлы |
-|---|----------|----------|-------|
+| #    | Проблема | Описание | Файлы |
+|------|----------|----------|-------|
 | TD-1 | **README.md не отражает реальное состояние** | README показывает Phase 5 "в разработке", Phase 3/4 "ожидают", хотя кодовая база уже на уровне Phase 6. Это вводит в заблуждение. | [`README.md`](README.md) |
 | TD-2 | **QdrantStore не подключён к реальному Qdrant** | При импорте qdrant-client — заглушка. Векторный поиск фактически не работает. | [`core/index/qdrant_store.py`](core/index/qdrant_store.py) |
 | TD-3 | **Router — заглушка** | [`core/router/__init__.py`](core/router/__init__.py) — пустышка. Роутинг запроса к источнику не реализован. | [`core/router/`](core/router/) |
-| TD-4 | **Интеграционные тесты зависают** | Упомянуто в CURRENT_STATE.md. Неизвестная причина. | [`tests/integration/`](tests/integration/) |
-| TD-5 | **Кэш (Redis) не используется** | CacheClient создаётся, но не передаётся в ODLService методы кэширования. | [`core/cache/`](core/cache/), [`core/odl_service.py`](core/odl_service.py) |
+| TD-4 | **Кэш (Redis) не используется** | CacheClient создаётся, но не передаётся в ODLService методы кэширования. | [`core/cache/`](core/cache/), [`core/odl_service.py`](core/odl_service.py) |
 
 ### 2.2. Долг функциональности 🔶
 
@@ -125,7 +124,6 @@
 
 | # | Проблема | Описание |
 |---|----------|----------|
-| TD-22 | **bge-m3 модель (2.2 GB)** | На CPU медленная. В production может не подойти. |
 | TD-23 | **Одна точка отказа — ODLService** | При падении процесса теряются и REST, и MCP. |
 | TD-24 | **Нет мониторинга и алертинга** | Наблюдаемость есть, но нет метрик для Prometheus/Grafana. |
 | TD-25 | **Нет rate limiting** | API не защищён от abuse. |

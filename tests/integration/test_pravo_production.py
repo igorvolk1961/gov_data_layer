@@ -41,7 +41,6 @@ def mock_ocr() -> MagicMock:
 
 
 @pytest.mark.asyncio
-@pytest.mark.slow
 async def test_full_ingest_and_get_content_flow(
     mock_tracer: MagicMock, mock_ocr: MagicMock
 ) -> None:
@@ -96,7 +95,6 @@ async def test_full_ingest_and_get_content_flow(
 
 
 @pytest.mark.asyncio
-@pytest.mark.slow
 async def test_ingest_with_api_unavailable_then_recovers(
     mock_tracer: MagicMock,
     mock_ocr: MagicMock,

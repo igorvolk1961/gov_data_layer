@@ -39,10 +39,10 @@ class Embedder:
         Args:
             model_name: Sentence-transformers model name.
                         If None, reads from AppConfig (config.yaml → embedding.model).
-                        Default: "paraphrase-multilingual-MiniLM-L12-v2".
+                        Default: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2".
             vector_size: Expected embedding dimension.
                          If None, reads from AppConfig (config.yaml → embedding.vector_size).
-                         Default: 384 (paraphrase-multilingual-MiniLM-L12-v2).
+                         Default: 384 (sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2).
         """
         if model_name is None or vector_size is None:
             try:
@@ -55,7 +55,7 @@ class Embedder:
                     vector_size = cfg.embedding.vector_size
             except Exception:
                 if model_name is None:
-                    model_name = "paraphrase-multilingual-MiniLM-L12-v2"
+                    model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
                 if vector_size is None:
                     vector_size = 384
 
@@ -86,13 +86,13 @@ class Embedder:
             logger.info(
                 "Model '%s' loaded (vector size: %d)",
                 self._model_name,
-                model.get_sentence_embedding_dimension(),
+                model.get_embedding_dimension(),
             )
             return model
 
         self._model = await loop.run_in_executor(None, _load)
-        if hasattr(self._model, "get_sentence_embedding_dimension"):
-            self._vector_size = self._model.get_sentence_embedding_dimension()
+        if hasattr(self._model, "get_embedding_dimension"):
+            self._vector_size = self._model.get_embedding_dimension()
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts.

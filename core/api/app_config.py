@@ -71,7 +71,7 @@ class OCRConfig:
 class EmbeddingConfig:
     """Embedding model configuration."""
 
-    model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     vector_size: int = 384
 
 
@@ -203,7 +203,9 @@ class AppConfig:
         # --- Embedding ---
         emb_cfg = cfg.get("embedding", {})
         embedding = EmbeddingConfig(
-            model=str(emb_cfg.get("model", "paraphrase-multilingual-MiniLM-L12-v2")),
+            model=str(
+                emb_cfg.get("model", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+            ),
             vector_size=int(emb_cfg.get("vector_size", 384)),
         )
 

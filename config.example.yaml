@@ -30,7 +30,7 @@ ocr:
 
 # === Embedding Model ===
 embedding:
-  model: "paraphrase-multilingual-MiniLM-L12-v2"
+  model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
   vector_size: 384
 
 # === Vector Search (Qdrant) ===

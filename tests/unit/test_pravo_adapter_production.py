@@ -336,7 +336,6 @@ class TestIngestProduction:
         assert "pravo-doc3" in adapter._document_cache
 
     @pytest.mark.asyncio
-    @pytest.mark.slow
     async def test_ingest_returns_zero_on_api_unavailable(self, mock_tracer: MagicMock) -> None:
         """When API is unavailable, ingest returns 0 gracefully."""
         adapter = PravoAdapter(mode="production", tracer=mock_tracer)
@@ -351,7 +350,6 @@ class TestIngestProduction:
         assert count == 0
 
     @pytest.mark.asyncio
-    @pytest.mark.slow
     async def test_ingest_handles_empty_response(self, mock_tracer: MagicMock) -> None:
         """When API returns no items, ingest returns 0."""
         adapter = PravoAdapter(mode="production", tracer=mock_tracer)

@@ -82,7 +82,6 @@ async def test_get_persists_document_to_db(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.slow
 async def test_ingest_persists_all_documents_to_db(
     adapter_with_db: PravoAdapter,
     db: DatabaseClient,
