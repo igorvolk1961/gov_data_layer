@@ -138,16 +138,37 @@ flowchart TD
 
 **Критерий:** Для тестового документа определяются типы разделов через regexp.
 
-#### Шаг 8: Определение актуальности чанка(TD-11) ✅
-**Файлы:** [`core/persistence/repository/document_repo.py`](core/persistence/repository/document_repo.py)
+#### Шаг 8: Определение актуальности документа (TD-11) ✅
+**Файлы:** [`core/persistence/repository/document_repo.py`](core/persistence/repository/document_repo.py), [`core/persistence/repository/section_repo.py`](core/persistence/repository/section_repo.py)
 
 1. ✅ `get_legal_status(doc_uuid) → LegalStatus`: SQL по `document_revocation` / `document_section_modification`
 2. ✅ Если в `document_revocation` есть `revoked_document_id = doc_uuid` и `effective_date <= now()` → `REVOKED`
 3. ✅ Если в `document_section_modification` есть запись для секций документа с `effective_date <= now()` → `MODIFIED`
 4. ✅ Иначе если `valid_from IS NULL OR valid_from <= now()` → `ACTIVE`, иначе `UNKNOWN`
-5. ✅ NO logger — только tracer spans
+5. ✅ `is_section_actual(section_uuid) → bool` — проверяет parent doc revocation, deletion, modification
+6. ✅ NO logger — только tracer spans
 
 **Критерий:** `get_legal_status()` возвращает корректный статус.
+
+#### Шаг 9: not_actual_since в метаданных чанков Qdrant ⏳
+**Файлы:** [`core/models/models.py`](core/models/models.py), [`core/index/qdrant_store.py`](core/index/qdrant_store.py), [`adapters/base/ingest_pipeline.py`](adapters/base/ingest_pipeline.py)
+
+Вместо булева `actual` используется **`not_actual_since: date | None`**:
+- `null` при инжесте → чанк актуален
+- дата при деактивации → чанк не актуален после этой даты
+- Если `effective_date` не указан, используется `valid_from` изменяющего документа
+- Деактивированный чанк не может быть восстановлен
+
+1. ✅ `DocumentChunk.not_actual_since` — модель расширена
+2. ✅ Поле сохраняется в payload Qdrant при upsert
+3. ✅ Payload index для `not_actual_since` — быстрая фильтрация
+4. ✅ `build_filter()` → Qdrant Filter: `should: [is_null, gt: now()]`
+5. ⏳ `QdrantStore.deactivate_sections(section_uuids, date)` — scroll + set_payload
+6. ⏳ Wire в pipeline после `save_analysis_facts()`
+7. ⏳ Парсинг `not_actual_since` из payload при чтении чанков
+8. ⏳ Тесты
+
+**Критерий:** Поиск через Qdrant не возвращает чанки, у которых `not_actual_since <= now()`.
 
 ---
 

@@ -134,6 +134,35 @@ async def process_document_text(
                             all_facts, doc_uuid, resolved_section_uuids
                         )
                         span.set_output({"facts_saved": len(all_facts)})
+                        # Deactivate affected sections in Qdrant
+                        if qdrant is not None:
+                            from datetime import date as _date
+
+                            affected_uuids: list[str] = []
+                            effective_date: _date | None = None
+                            for fact in all_facts:
+                                if fact.target_document_id:
+                                    # For REVOKE: get sections of target doc
+                                    try:
+                                        target_sections = await section_repo.get_sections(
+                                            fact.target_document_id
+                                        )
+                                        for sec in target_sections:
+                                            if sec.id in resolved_section_uuids:
+                                                affected_uuids.append(
+                                                    resolved_section_uuids[sec.id]
+                                                )
+                                    except Exception:
+                                        pass
+                                # Use current doc's valid_from as default effective_date
+                                if effective_date is None and fact.effective_date:
+                                    effective_date = fact.effective_date
+                            if affected_uuids:
+                                deactivated = await qdrant.deactivate_sections(
+                                    affected_uuids,
+                                    effective_date or _date.today(),
+                                )
+                                span.set_output({"deactivated_chunks": deactivated})
                 except Exception as exc:
                     span.set_error(exc)
                     span.set_output({"error": str(exc)[:200]})
