@@ -1,6 +1,6 @@
 """Integration tests for DatabaseClient helpers with real PostgreSQL.
 
-These tests connect to the metadata-db container (postgresql://odl:odl@localhost:5432/odl_metadata)
+These tests connect to the metadata-db container (postgresql://odl:odl@localhost:5432/odl_metadata)  # pragma: allowlist secret
 and verify that the helpers work correctly against a real database.
 
 Prerequisites:

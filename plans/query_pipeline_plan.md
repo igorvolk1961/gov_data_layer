@@ -112,12 +112,13 @@ flowchart TD
 
 ### Phase B: Persistence связей (Steps 6)
 
-#### Шаг 6: Sections в PostgreSQL (TD-8)
-**Файлы:** [`core/odl_service.py`](core/odl_service.py), [`adapters/base/ingest_pipeline.py`](adapters/base/ingest_pipeline.py)
+#### Шаг 6: Sections в PostgreSQL (TD-8) ✅
+**Файлы:** [`core/odl_service.py`](core/odl_service.py), [`adapters/base/ingest_pipeline.py`](adapters/base/ingest_pipeline.py), [`core/persistence/repository/section_repo.py`](core/persistence/repository/section_repo.py), [`core/ingest/chunker.py`](core/ingest/chunker.py), [`adapters/pravo/adapter/production/ingest.py`](adapters/pravo/adapter/production/ingest.py), [`adapters/pravo/adapter/stub/ingest.py`](adapters/pravo/adapter/stub/ingest.py)
 
-1. В `_persist_document()` — после `doc_repo.upsert_document()` вызвать `section_repo.upsert_sections(doc_uuid, toc)`
-2. Получить mapping `external_id → UUID` для section_uuids
-3. Передать section_uuids в `process_document_text()` для `DocumentChunk.section_uuids`
+1. ✅ В `_persist_document()` — после `doc_repo.upsert_document()` вызвать `section_repo.upsert_sections(doc_uuid, toc)`
+2. ✅ `section_repo.upsert_sections()` возвращает `dict[str,str]` (external_id→UUID)
+3. ✅ mapping передаётся в `process_document_text()` → `DocumentChunk.section_uuids` заполняется
+4. ✅ Все `logger` заменены на `tracer` spans
 
 **Критерий:** После инжеста разделы в PostgreSQL + связаны с чанками в Qdrant.
 
@@ -179,6 +180,6 @@ flowchart LR
 | 3 | `qdrant.search(vec, context)` фильтрует |
 | 4 | REST поиск возвращает результаты из Qdrant |
 | 5 | ✅ Деталь документа содержит цитаты из чанков |
-| 6 | Sections в PostgreSQL после инжеста |
+| 6 | ✅ Sections в PostgreSQL после инжеста |
 | 7 | `SectionAnalyzer` находит REVOKE/MODIFY/ENACT |
 | 8 | `get_legal_status` возвращает ACTIVE/REVOKED |
