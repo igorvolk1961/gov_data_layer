@@ -156,39 +156,24 @@ class SectionAnalyzer:
     def analyze(self, text: str, section_external_id: str = "") -> list[SectionFact]:
         """Analyze section text and return detected legal facts.
 
+        ⚠️ STUB: Always returns an empty list.
+        Full implementation (regex → NER → LLM) is deferred — extracting
+        the referenced document name/title from text is a non-trivial NLP
+        task beyond the current PoC scope.
+
+        When the real implementation is added, the persistence infrastructure
+        (ChangeTrackingRepository.save_analysis_facts) is already complete
+        and ready to receive SectionFact objects.
+
         Args:
             text: The text of the document section to analyze.
             section_external_id: Optional external ID of the section (for provenance).
 
         Returns:
-            List of detected SectionFact objects. Empty list if no patterns match.
+            Empty list (stub).
         """
-        if not text:
-            return []
-
-        facts: list[SectionFact] = []
-        seen: set[tuple[SectionFactType, str]] = set()  # dedup by (type, match_text)
-
-        for pattern, fact_type, weight in self._patterns:
-            for match in pattern.finditer(text):
-                matched_text = match.group(0).strip()
-                dedup_key = (fact_type, matched_text[:100])
-
-                if dedup_key in seen:
-                    continue
-                seen.add(dedup_key)
-
-                fact = SectionFact(
-                    fact_type=fact_type,
-                    section_external_id=section_external_id,
-                    text=matched_text,
-                    confidence=weight,
-                    target_document_id=self._extract_target_id(matched_text),
-                    effective_date=self._extract_date(matched_text),
-                )
-                facts.append(fact)
-
-        return facts
+        # Stub: no-op until the full NLP-based implementation is ready.
+        return []
 
     @staticmethod
     def _extract_target_id(text: str) -> str | None:
