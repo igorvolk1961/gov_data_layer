@@ -15,7 +15,7 @@ Each fact includes extraction_confidence based on pattern match quality.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date
 from enum import Enum
 from typing import Any
 
@@ -153,7 +153,7 @@ class SectionAnalyzer:
         """
         self._patterns = patterns or _PATTERNS
 
-    def analyze(self, text: str, section_external_id: str = "") -> list[SectionFact]:
+    def analyze(self, _text: str, _section_external_id: str = "") -> list[SectionFact]:
         """Analyze section text and return detected legal facts.
 
         ⚠️ STUB: Always returns an empty list.

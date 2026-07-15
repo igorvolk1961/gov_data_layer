@@ -275,7 +275,7 @@ class ChangeTrackingRepository:
                     )
                 elif fact.fact_type.value == "modify":
                     # For MODIFY, link to all sections of the current document
-                    for sec_ext_id, sec_uuid in section_uuids.items():
+                    for _sec_ext_id, sec_uuid in section_uuids.items():
                         await self.add_section_modification(
                             section_id=sec_uuid,
                             modifying_document_id=target_doc_uuid,
