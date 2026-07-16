@@ -202,9 +202,8 @@ class QdrantStore:
         now_ts = _date_to_timestamp(datetime.now(timezone.utc).date())
         return _qdrant_models.Filter(
             should=[
-                _qdrant_models.FieldCondition(
-                    key="not_actual_since",
-                    is_empty=True,
+                _qdrant_models.IsEmptyCondition(
+                    is_empty=_qdrant_models.PayloadField(key="not_actual_since"),
                 ),
                 _qdrant_models.FieldCondition(
                     key="not_actual_since",
@@ -353,14 +352,6 @@ class QdrantStore:
                 qdrant_filter = _qdrant_models.Filter(
                     must=conditions,
                 )
-
-        search_result = client.query_points(
-            collection_name=self._collection,
-            query=query_embedding,
-            query_filter=qdrant_filter,
-            limit=limit,
-            with_payload=True,
-        )
 
         # Merge default not_actual_since filter with caller-provided filters
         default_filter = await self.build_filter()
