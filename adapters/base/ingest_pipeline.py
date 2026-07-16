@@ -34,6 +34,8 @@ async def process_document_text(
     qdrant: QdrantStore | None = None,
     section_repo: SectionRepository | None = None,
     section_uuids: dict[str, str] | None = None,
+    region: str | None = None,
+    region_id: str | None = None,
 ) -> tuple[list[DocumentChunk], list[TocNode]]:
     """Process document text: chunk -> persist sections -> embed -> Qdrant.
 
@@ -91,6 +93,13 @@ async def process_document_text(
                 with span:
                     span.set_input({"document_id": document_id})
                 return [], toc
+            # Propagate region metadata to each chunk
+            if region is not None or region_id is not None:
+                for chunk in chunks:
+                    if region is not None:
+                        chunk.region = region
+                    if region_id is not None:
+                        chunk.region_id = region_id
 
         # 2. Persist sections to PostgreSQL (if repo is available and not already persisted)
         resolved_section_uuids = section_uuids

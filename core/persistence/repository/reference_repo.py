@@ -260,6 +260,89 @@ class ReferenceRepository:
         assert result is not None
         return str(result["id"])
 
+    async def search_region_id(self, name: str) -> tuple[str, float] | None:
+        """Resolve region name to region UUID via trigram search.
+
+        Uses pg_trgm similarity search (name % $1). Returns the best match
+        as (uuid, similarity_score), or None if no match found.
+        The similarity score is used as a confidence signal in the response.
+
+        Args:
+            name: Region name to search for (e.g. 'Московская область').
+
+        Returns:
+            Tuple of (region_uuid, similarity_score) or None.
+
+        Raises:
+            asyncpg.PostgresError: On query failure.
+            ConnectionError: If not connected.
+        """
+        row = await self._db.fetchrow(
+            """
+            SELECT id, similarity(name, $1) as score
+            FROM region
+            WHERE name % $1
+            ORDER BY score DESC
+            LIMIT 1
+            """,
+            name,
+        )
+        if row:
+            return str(row["id"]), float(row["score"])
+        return None
+
+    async def list_regions(
+        self,
+        parent_id: str | None = None,
+        query: str = "",
+    ) -> list[dict[str, object]]:
+        """List regions from the hierarchical region table.
+
+        Args:
+            parent_id: Filter by parent region ID (None = all roots).
+            query: Optional search query (filters by name).
+
+        Returns:
+            List of region dicts with id, name, parent_id, description keys.
+
+        Raises:
+            asyncpg.PostgresError: On query failure.
+            ConnectionError: If not connected.
+        """
+        if query:
+            rows = await self._db.fetch(
+                """
+                SELECT id, name, parent_id, description,
+                       similarity(name, $1) as score
+                FROM region
+                WHERE name % $1
+                ORDER BY score DESC
+                LIMIT 100
+                """,
+                query,
+            )
+        elif parent_id is not None:
+            rows = await self._db.fetch(
+                """
+                SELECT id, name, parent_id, description
+                FROM region
+                WHERE parent_id = $1::uuid
+                ORDER BY name
+                """,
+                parent_id,
+            )
+        else:
+            rows = await self._db.fetch(
+                """
+                SELECT id, name, parent_id, description
+                FROM region
+                WHERE parent_id IS NULL
+                ORDER BY name
+                """
+            )
+
+        return [dict(r) for r in rows]
+
 
 __all__ = [
     "ReferenceRepository",

@@ -96,4 +96,25 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="v001-009" author="kilo-code">
+        <comment>Recreate region table as hierarchical, universal (not tied to data source). Add trigram index for full-text search.</comment>
+        <sqlFile path="009_recreate_region_hierarchical.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            CREATE TABLE IF NOT EXISTS region_old (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                source_id UUID NOT NULL REFERENCES data_source(id) ON DELETE CASCADE,
+                external_id VARCHAR(36) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                weight INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                UNIQUE (source_id, external_id)
+            );
+            INSERT INTO region_old (id, source_id, external_id, name, weight, created_at)
+            SELECT r.id, ds.id, r.external_id, r.name, r.weight, r.created_at
+            FROM region r CROSS JOIN data_source ds LIMIT 1;
+            DROP TABLE IF EXISTS region CASCADE;
+            ALTER TABLE region_old RENAME TO region;
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

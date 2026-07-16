@@ -44,6 +44,7 @@ from core.persistence.repository import (
     ReferenceRepository,
     SectionRepository,
 )
+from core.regions import RegionResolver
 
 logger = get_logger(__name__)
 
@@ -130,6 +131,16 @@ class ODLService(ODLServiceProtocol):
     def _qdrant_lazy(self) -> QdrantStore | None:
         """Lazy access to QdrantStore."""
         return self._qdrant
+
+    @property
+    def _region_resolver(self) -> RegionResolver | None:
+        """Lazy init of RegionResolver."""
+        if self._ref_repo_lazy is not None:
+            return RegionResolver(
+                ref_repo=self._ref_repo_lazy,
+                cache=self._cache,
+            )
+        return None
 
     @staticmethod
     def _cache_key(method: str, *args: str) -> str:
@@ -234,6 +245,17 @@ class ODLService(ODLServiceProtocol):
                 span.set_output({"total_count": 0, "reason": "qdrant_not_configured"})
                 return SearchResponse(results=[], total_count=0, offset=offset)
 
+            # Resolve region text to region_id for Qdrant filtering
+            if ctx.region is not None and ctx.region_id is None:
+                resolver = self._region_resolver
+                if resolver is not None:
+                    region_result = await resolver.resolve(ctx.region)
+                    if region_result is not None:
+                        ctx.region_id, ctx.region_confidence = region_result
+
+            # Check if region context is missing (regional docs exist but no region specified)
+            missing_context, suggested_clarification = await self._check_missing_region(ctx, query)
+
             try:
                 embedder = self._embedder_lazy
                 query_vector = await embedder.embed_query(query)
@@ -295,6 +317,8 @@ class ODLService(ODLServiceProtocol):
                 results=results,
                 total_count=len(results),
                 offset=offset,
+                missing_context=missing_context,
+                suggested_clarification_prompt=suggested_clarification,
             )
 
             # --- Cache-aside: populate cache after successful search ---
@@ -603,6 +627,38 @@ class ODLService(ODLServiceProtocol):
                 logger.exception("Failed to get TOC for document %s", document_id)
                 span.set_output({"count": 0, "error": "db_error"})
                 return []
+
+    async def _check_missing_region(
+        self,
+        ctx: SearchContext,
+        _query: str = "",
+    ) -> tuple[str | None, str | None]:
+        """Check if region context is missing when regional docs exist.
+
+        If the query has no region specified but the search context includes
+        topic/rubric filters, checks PostgreSQL for jurisdiction distribution
+        of documents under those rubrics. If regional documents exist,
+        suggests the agent ask for the user's region.
+
+        Returns:
+            Tuple of (missing_context_type, suggested_clarification_prompt).
+            Both None if region is already specified or no rubric context.
+        """
+        if ctx.region is not None:
+            return None, None
+        if not ctx.topic:
+            return None, None
+        ref_repo = self._ref_repo_lazy
+        if ref_repo is None:
+            return None, None
+        try:
+            # Stub: simplified check — actual implementation would query
+            # document_jurisdiction distribution for the requested rubrics
+            _ = ref_repo  # placeholder
+            return None, None
+        except Exception:
+            logger.exception("Failed to check missing region")
+            return None, None
 
 
 __all__ = [

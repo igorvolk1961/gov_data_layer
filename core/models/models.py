@@ -124,6 +124,11 @@ class OfficialDocument(BaseModel):
         "Пример: 'Московская область', 'г. Москва'. "
         "Для федеральных документов — null.",
     )
+    region_id: str | None = Field(
+        default=None,
+        description="UUID региона из таблицы region (государственный классификатор). "
+        "Устанавливается при инжесте через get_or_create_region.",
+    )
     topic: list[str] = Field(
         default_factory=list,
         description="Тематические рубрики. Документ может относиться к нескольким рубрикам. "
@@ -138,6 +143,10 @@ class OfficialDocument(BaseModel):
         description="GUID органа, принявшего документ, из API источника. "
         "Используется как external_id в таблице organization. "
         "Пример: '3fa85f64-5717-4562-b3fc-2c963f66afa6'",
+    )
+    document_type: str | None = Field(
+        default=None,
+        description="Вид документа. Пример: 'Приказ', 'Постановление', 'Федеральный закон'",
     )
     document_type_id: str | None = Field(
         default=None,
@@ -165,10 +174,6 @@ class OfficialDocument(BaseModel):
     document_number: str | None = Field(
         default=None,
         description="Номер документа (НПА). Пример: '668н', '154н', '2330'",
-    )
-    document_type: str | None = Field(
-        default=None,
-        description="Вид документа. Пример: 'Приказ', 'Постановление', 'Федеральный закон'",
     )
     publish_id: str | None = Field(
         default=None,
@@ -204,6 +209,18 @@ class SearchContext(BaseModel):
     region: str | None = Field(
         default=None,
         description="Географический регион (город, область, край). Пример: 'Московская область', 'г. Москва'",
+    )
+    region_id: str | None = Field(
+        default=None,
+        description="Resolved region UUID for Qdrant filtering. "
+        "Set internally by ODLService after trigram search.",
+    )
+    region_confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Trigram similarity score of the resolved region. "
+        "Used as honesty signal in the response confidence.",
     )
     # Примечание: None vs [] — в SearchContext None означает "фильтр не указан"
     # (пропустить фильтрацию), в то время как в OfficialDocument, SearchResult
@@ -308,6 +325,17 @@ class SearchResponse(BaseModel):
         ge=0,
         description="Смещение, использованное в запросе (зеркалится из SearchContext.offset "
         "для удобства агента)",
+    )
+    missing_context: str | None = Field(
+        default=None,
+        description="Indicates what context is missing from the query, "
+        "e.g. 'region'. Set when region is not specified but "
+        "regional documents exist for the requested rubric.",
+    )
+    suggested_clarification_prompt: str | None = Field(
+        default=None,
+        description="Prompt for the agent to ask the user for missing context. "
+        "Example: 'Для уточнения запроса, пожалуйста, укажите Ваш регион проживания'",
     )
 
 
@@ -440,4 +468,33 @@ class DocumentChunk(BaseModel):
         "Устанавливается при обработке документа, отменяющего/изменяющего "
         "раздел, к которому относится чанк. По умолчанию None (актуален). "
         "При поиске фильтр: not_actual_since IS NULL OR not_actual_since > now().",
+    )
+    region: str | None = Field(
+        default=None,
+        description="Географический регион, к которому относится документ. "
+        "Заполняется из OfficialDocument.region при инжесте.",
+    )
+    region_id: str | None = Field(
+        default=None,
+        description="UUID региона из таблицы region. "
+        "Заполняется из OfficialDocument.region_id при инжесте. "
+        "Используется для фильтрации в Qdrant.",
+    )
+
+
+class RegionNode(BaseModel):
+    """A node in the hierarchical region tree.
+
+    Mirrors TopicNode structure for consistency in API responses.
+    """
+
+    id: str = Field(min_length=1, description="Уникальный идентификатор региона")
+    name: str = Field(description="Название региона")
+    parent_id: str = Field(
+        description="ID родительского региона. Empty string ('') = root-level",
+    )
+    description: str | None = Field(default=None, description="Описание региона")
+    child_count: int = Field(default=0, ge=0, description="Количество дочерних регионов")
+    document_count: int = Field(
+        default=0, ge=0, description="Количество документов, связанных с регионом"
     )

@@ -169,6 +169,10 @@ class QdrantStore:
                 payload["data_freshness"] = chunk.data_freshness.isoformat()
             if chunk.not_actual_since is not None:
                 payload["not_actual_since"] = _date_to_timestamp(chunk.not_actual_since)
+            if chunk.region is not None:
+                payload["region"] = chunk.region
+            if chunk.region_id is not None:
+                payload["region_id"] = chunk.region_id
 
             points.append(
                 _qdrant_models.PointStruct(
@@ -353,11 +357,11 @@ class QdrantStore:
 
         # Metadata Routing: translate SearchContext to payload filters
         if context is not None:
-            if context.region is not None:
+            if context.region_id is not None:
                 conditions.append(
                     _qdrant_models.FieldCondition(
-                        key="region",
-                        match=_qdrant_models.MatchValue(value=context.region),
+                        key="region_id",
+                        match=_qdrant_models.MatchValue(value=context.region_id),
                     )
                 )
             if context.topic:
