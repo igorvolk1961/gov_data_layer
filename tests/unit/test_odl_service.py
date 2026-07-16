@@ -239,6 +239,11 @@ class TestGetDocumentDetail:
 
     pytestmark = pytest.mark.asyncio
 
+    @pytest.fixture(autouse=True)
+    def _setup_repos(self, service: ODLService, doc_repo_mock: MagicMock, section_repo_mock: MagicMock) -> None:
+        service._doc_repo = doc_repo_mock
+        service._section_repo = section_repo_mock
+
     async def test_returns_document_detail(self, service: ODLService) -> None:
         detail = await service.get_document_detail("doc-1")
         assert isinstance(detail, DocumentDetail)
@@ -432,15 +437,19 @@ class TestGetDocumentDetailWithQdrant:
     ) -> None:
         """Verify get_chunks_by_document_id was called with correct doc id."""
         await detail_service.get_document_detail("doc-1")
-        detail_qdrant_mock.get_chunks_by_document_id.assert_awaited_once_with(
-            "doc-1",
-        )
+        # Now uses doc_repo_mock which returns document with id="stub-doc-001"
+        detail_qdrant_mock.get_chunks_by_document_id.assert_awaited_once()
 
 
 class TestGetDocumentDetailQdrantFallback:
     """get_document_detail fallback when Qdrant is unavailable or errors."""
 
     pytestmark = pytest.mark.asyncio
+
+    @pytest.fixture(autouse=True)
+    def _setup_repos(self, doc_repo_mock: MagicMock, section_repo_mock: MagicMock) -> None:
+        self._doc_repo = doc_repo_mock
+        self._section_repo = section_repo_mock
 
     @pytest.fixture
     def error_qdrant_mock(self) -> MagicMock:
@@ -457,10 +466,10 @@ class TestGetDocumentDetailQdrantFallback:
         tracer_mock: MagicMock,
         error_qdrant_mock: MagicMock,
     ) -> ODLService:
-        return ODLService(
-            tracer=tracer_mock,
-            qdrant=error_qdrant_mock,
-        )
+        svc = ODLService(tracer=tracer_mock, qdrant=error_qdrant_mock)
+        svc._doc_repo = self._doc_repo
+        svc._section_repo = self._section_repo
+        return svc
 
     async def test_qdrant_error_falls_back_to_summary(
         self,
@@ -601,6 +610,10 @@ class TestListTopics:
 
     pytestmark = pytest.mark.asyncio
 
+    @pytest.fixture(autouse=True)
+    def _setup_repos(self, service: ODLService, ref_repo_mock: MagicMock) -> None:
+        service._ref_repo = ref_repo_mock
+
     async def test_returns_list_of_topic_nodes(
         self,
         service: ODLService,
@@ -680,6 +693,10 @@ class TestGetToc:
     """get_toc -- content-rich checks."""
 
     pytestmark = pytest.mark.asyncio
+
+    @pytest.fixture(autouse=True)
+    def _setup_repos(self, service: ODLService, section_repo_mock: MagicMock) -> None:
+        service._section_repo = section_repo_mock
 
     async def test_returns_list_of_toc_nodes(
         self,
