@@ -325,7 +325,7 @@ class TestObservabilityConfig:
         assert config.log_level == "INFO"
         assert config.log_clear_on_start is False
         # log_file is resolved to an absolute path; check it ends with the expected relative path
-        assert config.log_file.replace("\\", "/").endswith("data/traces.log")
+        assert config.log_file.replace("\\", "/").endswith("logs/traces.log")
 
     def test_langfuse_enabled_false_by_default(self) -> None:
         config = ObservabilityConfig()

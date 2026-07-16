@@ -48,7 +48,7 @@ class ObservabilityConfig:
     langfuse_secret_key: str | None = None
     log_level: str = "INFO"
     log_clear_on_start: bool = False
-    log_file: str = "data/traces.log"
+    log_file: str = "logs/traces.log"
 
     def __post_init__(self) -> None:
         """Resolve relative log_file path to an absolute path."""
@@ -73,7 +73,7 @@ class ObservabilityConfig:
                 langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
                 log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
                 log_clear_on_start=os.getenv("LOG_CLEAR_ON_START", "false").lower() == "true",
-                log_file=os.getenv("LOG_FILE", "data/traces.log"),
+                log_file=os.getenv("LOG_FILE", "logs/traces.log"),
             )
 
         # Use AppConfig (config.yaml + .env)

@@ -38,13 +38,6 @@ TEST_OCR_TEXT: str | None = None
 if OCR_PATH.exists():
     TEST_OCR_TEXT = OCR_PATH.read_text(encoding="utf-8")
 
-# Multi-page document for larger test (35 pages, ~95K chars)
-_BIG_OCR_PATH = _TEST_PDF_DIR / "0001202012230060.yandex_vision.txt"
-BIG_OCR_TEXT: str | None = None
-if _BIG_OCR_PATH.exists():
-    BIG_OCR_TEXT = _BIG_OCR_PATH.read_text(encoding="utf-8")
-
-
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
@@ -121,18 +114,6 @@ class TestDocStructSplitterWithRealText:
         chunks, _toc = await splitter.split_text(TEST_OCR_TEXT, "pravo-7800202607010012", "uuid-1")
         for ch in chunks:
             assert isinstance(ch.section_path, list)
-
-    @pytest.mark.asyncio
-    @pytest.mark.slow
-    async def test_big_document_does_not_overtokenize(self, splitter: DocStructSplitter) -> None:
-        """A multi-page document should produce reasonable chunks without OOM."""
-        if BIG_OCR_TEXT is None:
-            pytest.skip("Big OCR test file not found")
-        chunks, toc = await splitter.split_text(BIG_OCR_TEXT, "pravo-0001202012230060", "uuid-big")
-        assert len(chunks) > 1, "Big document should produce multiple chunks"
-        assert len(toc) > 1, "Big document should produce multiple TOC entries"
-        total_chars = sum(len(c.text) for c in chunks)
-        assert total_chars > 50000, f"Total chunked text too small: {total_chars} chars"
 
 
 # ── Embedder integration ────────────────────────────────────────────

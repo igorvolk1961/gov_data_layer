@@ -95,7 +95,7 @@ class ObservabilityConfig:
     langfuse_secret_key: str | None = None
     log_level: str = "INFO"
     log_clear_on_start: bool = False
-    log_file: str = "data/traces.log"
+    log_file: str = "logs/traces.log"
 
 
 @dataclass
@@ -181,7 +181,7 @@ class AppConfig:
                 ).lower()
                 == "true"
             ),
-            log_file=str(os.getenv("LOG_FILE", obs_cfg.get("log_file", "data/traces.log"))),
+            log_file=str(os.getenv("LOG_FILE", obs_cfg.get("log_file", "logs/traces.log"))),
         )
 
         # --- Qdrant ---

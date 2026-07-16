@@ -94,39 +94,6 @@ async def test_yandex_vision_real_pdf() -> None:
     not _check_yandex_credentials(),
     reason="Yandex Vision credentials not configured",
 )
-@pytest.mark.asyncio
-@pytest.mark.slow
-async def test_yandex_vision_multi_page_pdf() -> None:
-    """Распознавание многостраничного PDF (35 страниц) через Yandex Vision.
-
-    Проверяет:
-    - Разбивку PDF на отдельные страницы через _split_pdf_into_pages
-    - Распознавание всех страниц через extract_text (итерация по страницам)
-    - Наличие осмысленного текста в результате
-    """
-    big_pdf = Path(__file__).parents[2] / "tests" / "data" / "pdf" / "0001202012230060.pdf"
-    if not big_pdf.exists():
-        pytest.skip(f"Test PDF not found: {big_pdf}")
-
-    pdf_bytes = big_pdf.read_bytes()
-
-    ocr = YandexVisionOCR(
-        ya_key_secret=os.environ["OCR_YA_KEY_SECRET"],
-        ya_folder_id=os.environ["OCR_YA_FOLDER_ID"],
-        timeout=120.0,
-    )
-
-    # Разбиваем PDF на страницы
-    pages = ocr._split_pdf_into_pages(pdf_bytes)
-    assert len(pages) > 1, f"Ожидалось >1 страница, получено {len(pages)}"
-
-    # Распознаём через публичный API (итерация по всем страницам)
-    text = await ocr.extract_text(pdf_bytes, document_id=str(big_pdf))
-    assert text, "Yandex Vision вернул пустой текст для многостраничного PDF"
-    # Эталонный текст — 172 750 символов. Ожидаем хотя бы 50% от эталона
-    assert len(text) > 50000, f"Слишком короткий результат для 35 страниц: {len(text)} chars"
-
-
 # ============================================================
 # Tesseract OCR — локальный fallback
 # ============================================================

@@ -131,7 +131,7 @@ services:
       - DATABASE_URL=postgresql://odl:odl@metadata-db:5432/odl_metadata
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_CLEAR_ON_START=${LOG_CLEAR_ON_START:-false}
-      - LOG_FILE=${LOG_FILE:-data/traces.log}
+      - LOG_FILE=${LOG_FILE:-logs/traces.log}
     volumes:
       - app_data:/app/data  # Логи и прочие файлы
       - ./adapters:/app/adapters:ro  # Read-only: переопределяет COPY из образа. Для разработки адаптеров используйте docker-compose.override.yml без :ro

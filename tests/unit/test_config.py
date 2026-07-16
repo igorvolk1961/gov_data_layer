@@ -301,7 +301,7 @@ server:
   api_port: 8000
 observability:
   log_level: "INFO"
-  log_file: "data/traces.log"
+  log_file: "logs/traces.log"
 qdrant:
   host: "localhost"
   port: 6333
