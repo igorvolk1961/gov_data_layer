@@ -92,11 +92,7 @@ async def process_document_text(
     def _child(name: str) -> Any:
         return tracer.span(name, parent=pipeline_span) if tracer else _NullSpan()
 
-    if parent_span is None:
-        # Only manage context when we created the root span
-        ctx = pipeline_span
-    else:
-        ctx = contextlib.nullcontext()
+    ctx = pipeline_span if parent_span is None else contextlib.nullcontext()
 
     with ctx:
         chunker = chunker or _Chunker()
