@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
+import json
+from datetime import datetime, timedelta, timezone
 
 from core.cache import CacheClient
 from core.errors import NotFoundError
@@ -129,6 +131,23 @@ class ODLService(ODLServiceProtocol):
         """Lazy access to QdrantStore."""
         return self._qdrant
 
+    @staticmethod
+    def _cache_key(method: str, *args: str) -> str:
+        """Build a deterministic cache key from method name and arguments.
+
+        Uses SHA-256 to produce a fixed-length, collision-resistant key.
+
+        Args:
+            method: The method name (e.g. 'search', 'detail', 'topics', 'toc').
+            *args: String representations of all arguments.
+
+        Returns:
+            A cache key like 'odl:search:abc123...'.
+        """
+        raw = "|".join([method, *args])
+        digest = hashlib.sha256(raw.encode()).hexdigest()
+        return f"odl:{method}:{digest}"
+
     async def _persist_document(
         self,
         doc: OfficialDocument,
@@ -188,10 +207,24 @@ class ODLService(ODLServiceProtocol):
         Векторный поиск по Qdrant → обогащение метаданных документа
         (url, source_name, title) из реляционной БД.
         Если БД недоступна — возвращаются только данные из Qdrant.
+
+        Результаты кэшируются в Redis на 5 минут (cache-aside).
+        При недоступности Redis запрос проходит напрямую в Qdrant.
         """
         ctx = context or SearchContext()
         offset = ctx.offset
         max_results = ctx.max_results
+
+        # --- Cache-aside: check cache first ---
+        cache_key = self._cache_key("search", query, ctx.model_dump_json())
+        if self._cache is not None:
+            try:
+                cached = await self._cache.get(cache_key)
+                if cached is not None:
+                    return SearchResponse.model_validate_json(cached)
+            except Exception:
+                logger.warning("Cache lookup failed for search — falling through", exc_info=True)
+
         results: list[SearchResult] = []
 
         with self.tracer.trace("search_documents", query=query[:100]) as span:
@@ -209,6 +242,7 @@ class ODLService(ODLServiceProtocol):
                     qdrant_chunks = await self._qdrant.search(
                         query_embedding=query_vector,
                         limit=max_results + offset,
+                        context=ctx,
                     )
                     qspan.set_output({"hits": len(qdrant_chunks)})
 
@@ -262,6 +296,18 @@ class ODLService(ODLServiceProtocol):
                 total_count=len(results),
                 offset=offset,
             )
+
+            # --- Cache-aside: populate cache after successful search ---
+            if self._cache is not None:
+                try:
+                    await self._cache.set(
+                        cache_key,
+                        response.model_dump_json(),
+                        ttl=timedelta(minutes=5),
+                    )
+                except Exception:
+                    logger.warning("Failed to cache search result", exc_info=True)
+
             span.set_output({"total_count": response.total_count})
             return response
 
@@ -275,7 +321,19 @@ class ODLService(ODLServiceProtocol):
         2. Получает чанки документа из Qdrant, собирает цитаты.
         3. Получает TOC из PostgreSQL (через section_repo).
         4. Если БД недоступна — NotFoundError.
+
+        Результаты кэшируются в Redis на 1 час (cache-aside).
         """
+        # --- Cache-aside: check cache first ---
+        cache_key = self._cache_key("detail", source_id)
+        if self._cache is not None:
+            try:
+                cached = await self._cache.get(cache_key)
+                if cached is not None:
+                    return DocumentDetail.model_validate_json(cached)
+            except Exception:
+                logger.warning("Cache lookup failed for detail — falling through", exc_info=True)
+
         with self.tracer.trace("get_document_detail", source_id=source_id) as span:
             span.set_input({"source_id": source_id})
 
@@ -322,6 +380,17 @@ class ODLService(ODLServiceProtocol):
                 toc=toc,
             )
             span.set_output({"document_id": detail.id, "title": detail.title})
+
+            # --- Cache-aside: populate cache after successful lookup ---
+            if self._cache is not None:
+                try:
+                    await self._cache.set(
+                        cache_key,
+                        detail.model_dump_json(),
+                        ttl=timedelta(hours=1),
+                    )
+                except Exception:
+                    logger.warning("Failed to cache document detail", exc_info=True)
 
         return detail
 
@@ -430,7 +499,20 @@ class ODLService(ODLServiceProtocol):
         parent_id: str | None = None,
         query: str = "",
     ) -> list[TopicNode]:
-        """Просмотр рубрикатора из PostgreSQL."""
+        """Просмотр рубрикатора из PostgreSQL.
+
+        Результаты кэшируются в Redis на 1 час (cache-aside).
+        """
+        # --- Cache-aside: check cache first ---
+        cache_key = self._cache_key("topics", str(parent_id), query)
+        if self._cache is not None:
+            try:
+                cached = await self._cache.get(cache_key)
+                if cached is not None:
+                    return [TopicNode.model_validate(t) for t in json.loads(cached)]
+            except Exception:
+                logger.warning("Cache lookup failed for topics — falling through", exc_info=True)
+
         with self.tracer.trace("list_topics", parent_id=str(parent_id)) as span:
             span.set_input({"parent_id": parent_id, "query": query})
             ref_repo = self._ref_repo_lazy
@@ -439,6 +521,18 @@ class ODLService(ODLServiceProtocol):
                 return []
             try:
                 topics = await ref_repo.list_topics(parent_id=parent_id, query=query)  # type: ignore[attr-defined]
+
+                # --- Cache-aside: populate cache ---
+                if self._cache is not None:
+                    try:
+                        await self._cache.set(
+                            cache_key,
+                            json.dumps([t.model_dump(mode="json") for t in topics]),
+                            ttl=timedelta(hours=1),
+                        )
+                    except Exception:
+                        logger.warning("Failed to cache topics list", exc_info=True)
+
                 span.set_output({"count": len(topics)})
                 return topics  # type: ignore[no-any-return]
             except Exception:
@@ -452,7 +546,20 @@ class ODLService(ODLServiceProtocol):
         parent_section_id: str | None = None,
         query: str = "",
     ) -> list[TocNode]:
-        """Оглавление документа из PostgreSQL."""
+        """Оглавление документа из PostgreSQL.
+
+        Результаты кэшируются в Redis на 1 час (cache-aside).
+        """
+        # --- Cache-aside: check cache first ---
+        cache_key = self._cache_key("toc", document_id, str(parent_section_id), query)
+        if self._cache is not None:
+            try:
+                cached = await self._cache.get(cache_key)
+                if cached is not None:
+                    return [TocNode.model_validate(t) for t in json.loads(cached)]
+            except Exception:
+                logger.warning("Cache lookup failed for TOC — falling through", exc_info=True)
+
         with self.tracer.trace("get_toc", document_id=document_id) as span:
             span.set_input(
                 {
@@ -470,6 +577,18 @@ class ODLService(ODLServiceProtocol):
                     document_uuid=document_id,
                     parent_section_id=parent_section_id,
                 )
+
+                # --- Cache-aside: populate cache ---
+                if self._cache is not None:
+                    try:
+                        await self._cache.set(
+                            cache_key,
+                            json.dumps([t.model_dump(mode="json") for t in result]),
+                            ttl=timedelta(hours=1),
+                        )
+                    except Exception:
+                        logger.warning("Failed to cache TOC", exc_info=True)
+
                 span.set_output({"count": len(result)})
                 return result  # type: ignore[no-any-return]
             except Exception:

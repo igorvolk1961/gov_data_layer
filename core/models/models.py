@@ -221,10 +221,6 @@ class SearchContext(BaseModel):
         "Пример: ['ФНС', 'Минюст России']. "
         "None = фильтр не применяется.",
     )
-    official_only: bool = Field(
-        default=False,
-        description="Только официальные источники (без аналитики и комментариев)",
-    )
     max_age_days: int | None = Field(
         default=None,
         ge=1,

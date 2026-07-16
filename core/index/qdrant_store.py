@@ -11,7 +11,7 @@ import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
-from core.models.models import DocumentChunk
+from core.models.models import DocumentChunk, SearchContext
 
 logger = logging.getLogger(__name__)
 
@@ -312,14 +312,17 @@ class QdrantStore:
         query_embedding: list[float],
         filters: dict[str, Any] | None = None,
         limit: int = 10,
+        context: SearchContext | None = None,
     ) -> list[tuple[DocumentChunk, float]]:
-        """Semantic search with payload filtering.
+        """Semantic search with payload filtering (Metadata Routing).
 
         Args:
             query_embedding: Query vector (float list).
-            filters: Optional payload filters. Example:
-                     {"document_id": "pravo-0001202012230060"}
+            filters: Optional additional payload filters.
             limit: Max number of results.
+            context: Optional SearchContext for Metadata Routing.
+                     Fields region, topic, organization, max_age_days
+                     are translated to Qdrant payload filters.
 
         Returns:
             List of (DocumentChunk, score) tuples, ordered by relevance.
@@ -329,10 +332,9 @@ class QdrantStore:
             logger.warning("Qdrant not available — returning empty search results")
             return []
 
-        # Build filter condition
-        qdrant_filter = None
+        # Build filter from explicit filters + SearchContext (Metadata Routing)
+        conditions: list[Any] = []
         if filters:
-            conditions = []
             for key, value in filters.items():
                 if isinstance(value, str):
                     conditions.append(
@@ -348,12 +350,47 @@ class QdrantStore:
                             match=_qdrant_models.MatchAny(any=value),
                         )
                     )
-            if conditions:
-                qdrant_filter = _qdrant_models.Filter(
-                    must=conditions,
+
+        # Metadata Routing: translate SearchContext to payload filters
+        if context is not None:
+            if context.region is not None:
+                conditions.append(
+                    _qdrant_models.FieldCondition(
+                        key="region",
+                        match=_qdrant_models.MatchValue(value=context.region),
+                    )
+                )
+            if context.topic:
+                conditions.append(
+                    _qdrant_models.FieldCondition(
+                        key="topic",
+                        match=_qdrant_models.MatchAny(any=context.topic),
+                    )
+                )
+            if context.organization:
+                conditions.append(
+                    _qdrant_models.FieldCondition(
+                        key="organization",
+                        match=_qdrant_models.MatchAny(any=context.organization),
+                    )
+                )
+            if context.max_age_days is not None:
+                from datetime import datetime, timezone, timedelta
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=context.max_age_days)).isoformat()
+                conditions.append(
+                    _qdrant_models.FieldCondition(
+                        key="data_freshness",
+                        range=_qdrant_models.Range(gte=cutoff),
+                    )
                 )
 
-        # Merge default not_actual_since filter with caller-provided filters
+        qdrant_filter = None
+        if conditions:
+            qdrant_filter = _qdrant_models.Filter(
+                must=conditions,
+            )
+
+        # Merge default not_actual_since filter
         default_filter = await self.build_filter()
         if default_filter is not None:
             if qdrant_filter is not None:
