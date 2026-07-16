@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from core.cache import CacheClient
+from core.errors import NotFoundError
 from core.index.qdrant_store import QdrantStore
 from core.ingest.embedder import Embedder
 from core.models.models import (
@@ -23,6 +24,7 @@ from core.models.models import (
     DocumentChunk,
     DocumentDetail,
     LegalStatus,
+    OfficialDocument,
     SearchContext,
     SearchResponse,
     SearchResult,
@@ -291,7 +293,7 @@ class ODLService(ODLServiceProtocol):
             toc: list[TocNode] = []
             if section_repo is not None:
                 try:
-                    toc = await section_repo.get_toc(doc_meta.id)
+                    toc = await section_repo.get_toc(doc_meta.id)  # type: ignore[attr-defined]
                 except Exception:
                     logger.exception("Failed to get TOC for document %s", source_id)
 
@@ -436,9 +438,9 @@ class ODLService(ODLServiceProtocol):
                 span.set_output({"count": 0, "reason": "no_database"})
                 return []
             try:
-                topics = await ref_repo.list_topics(parent_id=parent_id, query=query)
+                topics = await ref_repo.list_topics(parent_id=parent_id, query=query)  # type: ignore[attr-defined]
                 span.set_output({"count": len(topics)})
-                return topics
+                return topics  # type: ignore[no-any-return]
             except Exception:
                 logger.exception("Failed to list topics")
                 span.set_output({"count": 0, "error": "db_error"})
@@ -464,12 +466,12 @@ class ODLService(ODLServiceProtocol):
                 span.set_output({"count": 0, "reason": "no_database"})
                 return []
             try:
-                result = await section_repo.get_toc(
+                result = await section_repo.get_toc(  # type: ignore[attr-defined]
                     document_uuid=document_id,
                     parent_section_id=parent_section_id,
                 )
                 span.set_output({"count": len(result)})
-                return result
+                return result  # type: ignore[no-any-return]
             except Exception:
                 logger.exception("Failed to get TOC for document %s", document_id)
                 span.set_output({"count": 0, "error": "db_error"})

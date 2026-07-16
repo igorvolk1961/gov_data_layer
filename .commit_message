@@ -1,0 +1,17 @@
+пшеfeat: add jurisdiction derivation for canonical document model
+
+PravoAdapter now determines document jurisdiction from the publication
+block during ingest, fixing the bug where jurisdiction was always None.
+
+Changes:
+- pravo_parser.py: add BLOCK_TO_JURISDICTION mapping (8 blocks),
+  set_jurisdiction() method, fill jurisdiction in _map_fields()
+- constants.py: add _INGEST_BLOCKS dict with block→jurisdiction pairs
+- ingest.py: iterate over configured blocks, set jurisdiction on
+  parser before searching with Block= parameter
+
+Chores:
+- main.py: remove unused `cast` import (ruff F401)
+- odl_service.py: add missing NotFoundError and OfficialDocument
+  imports (ruff F821), suppress mypy attr-defined for dynamic repo
+  methods

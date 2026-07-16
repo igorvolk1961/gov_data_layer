@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
-from typing import cast
 
 import uvicorn
 from dotenv import load_dotenv
@@ -174,9 +173,7 @@ def main() -> None:
         app_config.embedding.vector_size,
     )
 
-    service = ODLService(
-        cache=cache, db=db, qdrant=qdrant_store, embedder=embedder
-    )
+    service = ODLService(cache=cache, db=db, qdrant=qdrant_store, embedder=embedder)
 
     # Create FastAPI app (REST) with cache and db for health check
     app = create_app(service, cache=cache, db=db)

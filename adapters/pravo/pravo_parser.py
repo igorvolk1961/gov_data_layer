@@ -30,6 +30,20 @@ from typing import Any
 
 from core.models.models import LegalStatus, OfficialDocument, Source
 
+# Статический маппинг кодов блоков публикации pravo.gov.ru → юрисдикция.
+# Коды взяты из документации API: /api/PublicBlocks, /api/BlockStatistics.
+# Блок определяет уровень власти органа, опубликовавшего документ.
+BLOCK_TO_JURISDICTION: dict[str, str] = {
+    "president": "federal",
+    "assembly": "federal",
+    "government": "federal",
+    "federal_authorities": "federal",
+    "court": "federal",
+    "subjects": "regional",
+    "international": "international",
+    "un_securitycouncil": "international",
+}
+
 
 class PravoParser:
     """Парсер ответов API pravo.gov.ru в каноническую модель OfficialDocument."""
@@ -45,6 +59,9 @@ class PravoParser:
         # a organization содержит сырые GUID.
         self._authority_cache: dict[str, str] = {}
         self._doc_type_cache: dict[str, str] = {}
+        # Юрисдикция, устанавливаемая перед циклом парсинга (через set_jurisdiction).
+        # Если None — jurisdiction не будет заполнен в документе.
+        self._jurisdiction: str | None = None
 
     def _make_document_id(self, raw_id: str) -> str:
         """Сформировать ID документа с префиксом источника.
@@ -154,6 +171,7 @@ class PravoParser:
             "valid_from": valid_from,
             "organization_id": organization_id,
             "document_type_id": doc_type_id,
+            "jurisdiction": self._jurisdiction,
             "meta": meta,
             "legal_status": LegalStatus.UNKNOWN,
         }
@@ -193,6 +211,18 @@ class PravoParser:
         """
         return self.parse_document(raw)
 
+    def set_jurisdiction(self, jurisdiction: str | None) -> None:
+        """Установить юрисдикцию для документов, которые будут распарсены.
+
+        Вызывается перед циклом поиска/парсинга, когда известен блок
+        публикации, из которого будут получены документы.
+
+        Args:
+            jurisdiction: Значение jurisdiction (например, 'federal', 'regional')
+                         или None для сброса.
+        """
+        self._jurisdiction = jurisdiction
+
     def update_authority_cache(
         self,
         authorities: list[dict[str, Any]],
@@ -225,5 +255,6 @@ class PravoParser:
 
 
 __all__ = [
+    "BLOCK_TO_JURISDICTION",
     "PravoParser",
 ]
