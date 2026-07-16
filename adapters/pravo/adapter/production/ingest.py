@@ -27,6 +27,10 @@ class ProductionIngestHandler(BaseIngestHandler):
         Returns:
             Number of successfully ingested documents.
         """
+        return await self._ingest_with_blocks(_INGEST_BLOCKS)
+
+    async def _ingest_with_blocks(self, blocks: dict[str, str]) -> int:
+        """Ingest documents for given blocks (overridable for testing)."""
         adapter = self._adapter
         with adapter.tracer.trace(
             "pravo.ingest",
@@ -47,7 +51,7 @@ class ProductionIngestHandler(BaseIngestHandler):
 
             # Перебираем блоки публикации. Для каждого блока известна
             # юрисдикция, которую получают все документы из этого блока.
-            for block_code, jurisdiction in _INGEST_BLOCKS.items():
+            for block_code, jurisdiction in blocks.items():
                 block_span_name = f"pravo.ingest.block.{block_code or 'all'}"
                 with adapter.tracer.trace(block_span_name) as block_span:
                     block_span.set_input({"block": block_code, "jurisdiction": jurisdiction})

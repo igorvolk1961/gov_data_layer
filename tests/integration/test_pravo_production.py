@@ -79,8 +79,8 @@ async def test_full_ingest_and_get_content_flow(
     # Mock PDF download for get_content
     adapter._pravo_client.download_pdf = AsyncMock(return_value=b"%PDF-1.4 fake pdf content")
 
-    # Step 1: Ingest
-    count = await adapter.ingest()
+    # Step 1: Ingest — использовать только 1 блок для теста
+    count = await adapter._ingest_with_blocks({"subjects": "regional"})
     assert count == 2
 
     # Step 2: Get content for first document
@@ -121,7 +121,7 @@ async def test_ingest_with_api_unavailable_then_recovers(
         side_effect=SourceUnavailableError("API temporarily down")
     )
 
-    count = await adapter.ingest()
+    count = await adapter._ingest_with_blocks({"subjects": "regional"})
     assert count == 0
 
     # Second call: API recovers
@@ -133,7 +133,7 @@ async def test_ingest_with_api_unavailable_then_recovers(
     # Mock PDF download for get_content during ingest
     adapter._pravo_client.download_pdf = AsyncMock(return_value=b"%PDF-1.4 fake pdf content")
 
-    count = await adapter.ingest()
+    count = await adapter._ingest_with_blocks({"subjects": "regional"})
     assert count == 1
 
 

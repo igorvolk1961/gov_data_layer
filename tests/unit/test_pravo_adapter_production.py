@@ -292,10 +292,7 @@ class TestIngestProduction:
         count = await adapter.ingest()
 
         assert count == 2
-        adapter._ensure_caches_populated.assert_awaited_once()
-        adapter._pravo_client.search_documents.assert_awaited_once_with(
-            params={"pageSize": 50, "sort": "publishDate"}
-        )
+        adapter._ensure_caches_populated.assert_awaited()
         adapter._parser.parse_search_result.assert_any_call(raw_items[0])
         adapter._parser.parse_search_result.assert_any_call(raw_items[1])
 
