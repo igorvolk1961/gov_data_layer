@@ -1,0 +1,51 @@
+# Demo Pipeline Configuration
+# References JSON files produced by download, analysis, and enrichment scripts
+
+data_dir: "output"
+
+# Data source
+source:
+  id: "pravo"
+  name: "Право.ру (pravo.gov.ru)"
+  url: "https://pravo.gov.ru"
+
+# Rubrics (topics) to register in DB and Qdrant
+rubrics:
+  - id: "labor-law"
+    name: "Трудовое право"
+  - id: "social-protection"
+    name: "Социальная защита"
+  - id: "normative-acts"
+    name: "Нормативные акты"
+  - id: "government-regulations"
+    name: "Постановления правительства"
+  - id: "economy"
+    name: "Экономика"
+
+# Documents
+documents:
+  - publish_id: "0001202012230060"
+    analysis: "output/analysis/0001202012230060.json"
+    enrichment: "output/enrichment/0001202012230060.json"
+    ocr_text: "output/documents/0001202012230060/ocr_text.txt"
+    metadata: "output/documents/0001202012230060/metadata.json"
+  - publish_id: "0001202206200030"
+    analysis: "output/analysis/0001202206200030.json"
+    enrichment: "output/enrichment/0001202206200030.json"
+    ocr_text: "output/documents/0001202206200030/ocr_text.txt"
+    metadata: "output/documents/0001202206200030/metadata.json"
+  - publish_id: "0001202212190143"
+    analysis: "output/analysis/0001202212190143.json"
+    enrichment: "output/enrichment/0001202212190143.json"
+    ocr_text: "output/documents/0001202212190143/ocr_text.txt"
+    metadata: "output/documents/0001202212190143/metadata.json"
+  - publish_id: "0001202607060006"
+    analysis: "output/analysis/0001202607060006.json"
+    enrichment: "output/enrichment/0001202607060006.json"
+    ocr_text: "output/documents/0001202607060006/ocr_text.txt"
+    metadata: "output/documents/0001202607060006/metadata.json"
+  - publish_id: "0001202606090026"
+    analysis: "output/analysis/0001202606090026.json"
+    enrichment: "output/enrichment/0001202606090026.json"
+    ocr_text: "output/documents/0001202606090026/ocr_text.txt"
+    metadata: "output/documents/0001202606090026/metadata.json"

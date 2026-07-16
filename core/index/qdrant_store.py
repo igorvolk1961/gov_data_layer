@@ -11,7 +11,7 @@ import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
-from core.models.models import DocumentChunk, SearchContext
+from core.models.models import DocumentChunk, SearchContext, TopicPoint
 
 logger = logging.getLogger(__name__)
 
@@ -510,6 +510,118 @@ class QdrantStore:
             return 0
         result = client.count(collection_name=self._collection)
         return result.count  # type: ignore[no-any-return]
+
+    # ── Topic Collection ─────────────────────────────────────────────
+
+    async def ensure_topic_collection(self) -> None:
+        """Create the 'topics' collection if it doesn't exist.
+
+        Uses the same vector_size as the documents collection.
+        """
+        client = await self._get_client()
+        if client is None:
+            logger.warning("Qdrant not available — skipping topic collection creation")
+            return
+
+        collections = client.get_collections().collections
+        existing = {c.name for c in collections}
+
+        if "topics" in existing:
+            logger.info("Topic collection already exists")
+            return
+
+        logger.info("Creating 'topics' collection (vector_size=%d)", self._vector_size)
+        client.create_collection(
+            collection_name="topics",
+            vectors_config=_qdrant_models.VectorParams(
+                size=self._vector_size,
+                distance=_qdrant_models.Distance.COSINE,
+            ),
+        )
+        # Create payload indexes for filtering
+        client.create_payload_index(
+            collection_name="topics",
+            field_name="topic_id",
+            field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
+        )
+
+    async def upsert_topic_vectors(
+        self,
+        topics: list[TopicPoint],
+    ) -> None:
+        """Upsert topic vectors into the 'topics' collection.
+
+        Args:
+            topics: List of TopicPoint objects with embeddings.
+        """
+        if not topics:
+            return
+
+        client = await self._get_client()
+        if client is None:
+            logger.warning("Qdrant not available — skipping topic upsert")
+            return
+
+        await self.ensure_topic_collection()
+
+        points: list[Any] = []
+        for topic in topics:
+            if topic.embedding is None:
+                logger.warning("Topic %s has no embedding — skipping", topic.id)
+                continue
+            payload: dict[str, Any] = {
+                "topic_id": topic.topic_id,
+                "name": topic.name,
+            }
+            points.append(
+                _qdrant_models.PointStruct(
+                    id=topic.id,
+                    vector=topic.embedding,
+                    payload=payload,
+                )
+            )
+
+        if not points:
+            return
+
+        client.upsert(
+            collection_name="topics",
+            points=points,
+        )
+        logger.info("Upserted %d topic vectors to 'topics' collection", len(points))
+
+    async def delete_topic_collection(self) -> None:
+        """Delete the 'topics' collection (for cleanup/reload)."""
+        client = await self._get_client()
+        if client is None:
+            return
+
+        collections = client.get_collections().collections
+        existing = {c.name for c in collections}
+
+        if "topics" in existing:
+            client.delete_collection("topics")
+            logger.info("Deleted 'topics' collection")
+
+    async def count_topics(self) -> int:
+        """Get total number of topic vectors in the topics collection."""
+        client = await self._get_client()
+        if client is None:
+            return 0
+        await self.ensure_topic_collection()
+        result = client.count(collection_name="topics")
+        return result.count  # type: ignore[no-any-return]
+
+    async def delete_all_collections(self) -> None:
+        """Delete both 'documents' and 'topics' collections (full cleanup)."""
+        client = await self._get_client()
+        if client is None:
+            return
+        collections = client.get_collections().collections
+        for c in collections:
+            if c.name in ("documents", "topics"):
+                client.delete_collection(c.name)
+                logger.info("Deleted collection '%s'", c.name)
 
 
 __all__ = [

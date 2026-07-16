@@ -54,6 +54,9 @@ def mock_service() -> MagicMock:
     svc.get_document_detail = AsyncMock()
     svc.list_topics = AsyncMock()
     svc.get_toc = AsyncMock()
+    svc.admin_get_reference_counts = AsyncMock()
+    svc.admin_get_qdrant_status = AsyncMock()
+    svc.admin_get_document_status = AsyncMock()
     return svc
 
 
@@ -367,3 +370,67 @@ class TestTracingMiddleware:
         mock_service.search_documents.side_effect = RuntimeError("unexpected")
         with pytest.raises(RuntimeError):
             client.post("/api/v1/search", json={"query": "test"})
+
+
+# ──────────────────────────────────────────────
+#  Admin / Verification endpoints
+# ──────────────────────────────────────────────
+
+
+class TestAdminReferenceCounts:
+    def test_returns_counts(self, client: TestClient, mock_service: MagicMock) -> None:
+        from core.odl_service_protocol import ReferenceCounts
+
+        mock_service.admin_get_reference_counts.return_value = ReferenceCounts(
+            rubric=3,
+            region=2,
+            organization=4,
+            document_type=5,
+            topic=3,
+            document=5,
+            document_section=12,
+        )
+        resp = client.get("/api/v1/admin/reference-counts")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["rubric"] == 3
+        assert data["region"] == 2
+        assert data["document"] == 5
+        assert data["document_section"] == 12
+
+
+class TestAdminQdrantStatus:
+    def test_returns_status(self, client: TestClient, mock_service: MagicMock) -> None:
+        from core.odl_service_protocol import AdminQdrantStatus, QdrantCollectionInfo
+
+        mock_service.admin_get_qdrant_status.return_value = AdminQdrantStatus(
+            documents=QdrantCollectionInfo(exists=True, count=42),
+            topics=QdrantCollectionInfo(exists=True, count=5),
+        )
+        resp = client.get("/api/v1/admin/qdrant/collections")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["documents"]["exists"] is True
+        assert data["documents"]["count"] == 42
+        assert data["topics"]["exists"] is True
+        assert data["topics"]["count"] == 5
+
+
+class TestAdminDocumentStatus:
+    def test_returns_status(self, client: TestClient, mock_service: MagicMock) -> None:
+        from core.odl_service_protocol import DocumentStatus
+
+        mock_service.admin_get_document_status.return_value = DocumentStatus(
+            publish_id="0001202012230060",
+            in_postgres=True,
+            doc_uuid="some-uuid",
+            chunk_count=10,
+            section_count=5,
+            rubric_count=2,
+        )
+        resp = client.get("/api/v1/admin/documents/0001202012230060/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["in_postgres"] is True
+        assert data["chunk_count"] == 10
+        assert data["section_count"] == 5

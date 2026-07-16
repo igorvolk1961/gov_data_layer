@@ -28,6 +28,7 @@ from core.models.models import (
     SourceAvailability,
     TocNode,
     TopicNode,
+    TopicPoint,
 )
 
 # ──────────────────────────────────────────────
@@ -606,6 +607,34 @@ class TestDocumentDetail:
 # ──────────────────────────────────────────────
 #  TopicNode
 # ──────────────────────────────────────────────
+
+
+class TestTopicPoint:
+    """Tests for TopicPoint model — rubric vector point for Qdrant."""
+
+    def test_minimal(self) -> None:
+        tp = TopicPoint(id="labor-law", topic_id="uuid-1", name="Трудовое право")
+        assert tp.id == "labor-law"
+        assert tp.topic_id == "uuid-1"
+        assert tp.name == "Трудовое право"
+        assert tp.embedding is None
+
+    def test_with_embedding(self) -> None:
+        tp = TopicPoint(
+            id="labor-law",
+            topic_id="uuid-1",
+            name="Трудовое право",
+            embedding=[0.1, 0.2, 0.3],
+        )
+        assert tp.embedding == [0.1, 0.2, 0.3]
+
+    def test_empty_id_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            TopicPoint(id="", topic_id="uuid-1", name="Test")
+
+    def test_empty_topic_id_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            TopicPoint(id="test", topic_id="", name="Test")
 
 
 class TestTopicNode:

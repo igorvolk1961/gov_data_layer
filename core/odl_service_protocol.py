@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from pydantic import BaseModel, Field
+
 from core.models.models import (
     DocumentDetail,
     SearchContext,
@@ -17,6 +19,43 @@ from core.models.models import (
     TocNode,
     TopicNode,
 )
+
+
+class ReferenceCounts(BaseModel):
+    """Counts of records in reference tables for admin verification."""
+
+    rubric: int = 0
+    region: int = 0
+    organization: int = 0
+    document_type: int = 0
+    topic: int = 0
+    document: int = 0
+    document_section: int = 0
+
+
+class QdrantCollectionInfo(BaseModel):
+    """Information about a Qdrant collection for admin verification."""
+
+    exists: bool = False
+    count: int = 0
+
+
+class AdminQdrantStatus(BaseModel):
+    """Qdrant collections status for admin verification."""
+
+    documents: QdrantCollectionInfo = Field(default_factory=QdrantCollectionInfo)
+    topics: QdrantCollectionInfo = Field(default_factory=QdrantCollectionInfo)
+
+
+class DocumentStatus(BaseModel):
+    """Full status of a document across DB and Qdrant."""
+
+    publish_id: str
+    in_postgres: bool = False
+    doc_uuid: str | None = None
+    chunk_count: int = 0
+    section_count: int = 0
+    rubric_count: int = 0
 
 
 @runtime_checkable
@@ -104,7 +143,25 @@ class ODLServiceProtocol(Protocol):
         """
         ...
 
+    # ── Admin / Verification Methods ──────────────────────────────────
+
+    async def admin_get_reference_counts(self) -> ReferenceCounts:
+        """Get counts of all reference tables for verification."""
+        ...
+
+    async def admin_get_qdrant_status(self) -> AdminQdrantStatus:
+        """Get Qdrant collections status for verification."""
+        ...
+
+    async def admin_get_document_status(self, publish_id: str) -> DocumentStatus:
+        """Get full status of a document across DB and Qdrant."""
+        ...
+
 
 __all__ = [
+    "AdminQdrantStatus",
+    "DocumentStatus",
     "ODLServiceProtocol",
+    "QdrantCollectionInfo",
+    "ReferenceCounts",
 ]

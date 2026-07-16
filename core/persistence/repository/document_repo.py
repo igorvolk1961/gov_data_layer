@@ -203,7 +203,7 @@ class DocumentRepository:
     ) -> None:
         """Upsert M:N document_topic records."""
         for topic_name in topics:
-            topic_id = await self._ref_repo.get_or_create_topic(
+            topic_id, _ = await self._ref_repo.get_or_create_topic(
                 source_id=source_uuid,
                 external_id=topic_name,
                 name=topic_name,

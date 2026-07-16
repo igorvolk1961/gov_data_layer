@@ -14,8 +14,15 @@ can exist in different data sources.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from core.observability import get_logger
 from core.persistence.db_client import DatabaseClient
+
+if TYPE_CHECKING:
+    from core.index.qdrant_store import QdrantStore
+    from core.ingest.embedder import Embedder
+    from core.models.models import TopicPoint
 
 logger = get_logger(__name__)
 
@@ -115,8 +122,27 @@ class ReferenceRepository:
         name: str,
         parent_id: str | None = None,
         description: str | None = None,
-    ) -> str:
-        """Get or create a topic record. Returns UUID string.
+        qdrant: QdrantStore | None = None,
+        embedder: Embedder | None = None,
+    ) -> tuple[str, bool]:
+        """Get or create a topic record.
+
+        If the topic is newly created and ``qdrant``/``embedder`` are provided,
+        the topic name is automatically embedded and stored as a vector
+        in the Qdrant 'topics' collection.
+
+        Args:
+            source_id: UUID of the data source.
+            external_id: External topic identifier.
+            name: Topic name.
+            parent_id: Optional parent topic UUID.
+            description: Optional topic description.
+            qdrant: Optional QdrantStore for automatic vector sync.
+            embedder: Optional Embedder for creating embeddings.
+
+        Returns:
+            Tuple of (topic_uuid, was_created).
+            ``was_created`` is True if the topic was just inserted.
 
         Raises: asyncpg.PostgresError, ConnectionError
         """
@@ -129,7 +155,7 @@ class ReferenceRepository:
             external_id,
         )
         if row is not None:
-            return str(row["id"])
+            return str(row["id"]), False
 
         result = await self._db.fetchrow(
             """
@@ -148,7 +174,24 @@ class ReferenceRepository:
             description,
         )
         assert result is not None
-        return str(result["id"])
+        topic_uuid = str(result["id"])
+
+        # Auto-sync to Qdrant if a new topic was created
+        if qdrant is not None and embedder is not None:
+            try:
+                embedding = await embedder.embed([name])
+                topic_point = TopicPoint(
+                    id=external_id,
+                    topic_id=topic_uuid,
+                    name=name,
+                    embedding=embedding[0] if embedding else None,
+                )
+                await qdrant.upsert_topic_vectors([topic_point])
+                logger.info("Synced topic '%s' to Qdrant topics collection", name)
+            except Exception:
+                logger.warning("Failed to sync topic '%s' to Qdrant", name, exc_info=True)
+
+        return topic_uuid, True
 
     async def get_or_create_data_source(
         self,

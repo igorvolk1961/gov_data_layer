@@ -498,3 +498,15 @@ class RegionNode(BaseModel):
     document_count: int = Field(
         default=0, ge=0, description="Количество документов, связанных с регионом"
     )
+
+
+class TopicPoint(BaseModel):
+    """Topic (rubric) vector point for storage in Qdrant topics collection.
+
+    Stores the topic name and embedding vector for semantic retrieval.
+    """
+
+    id: str = Field(min_length=1, description="Qdrant point ID (topic external_id)")
+    topic_id: str = Field(min_length=1, description="UUID of the topic in PostgreSQL")
+    name: str = Field(description="Topic name")
+    embedding: list[float] | None = Field(default=None, description="Topic embedding vector")

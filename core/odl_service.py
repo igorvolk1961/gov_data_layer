@@ -36,7 +36,13 @@ from core.models.models import (
 )
 from core.observability import get_logger, get_tracer
 from core.observability.tracer import Tracer
-from core.odl_service_protocol import ODLServiceProtocol
+from core.odl_service_protocol import (
+    AdminQdrantStatus,
+    DocumentStatus,
+    ODLServiceProtocol,
+    QdrantCollectionInfo,
+    ReferenceCounts,
+)
 from core.persistence import DatabaseClient
 from core.persistence.repository import (
     ChangeTrackingRepository,
@@ -659,6 +665,87 @@ class ODLService(ODLServiceProtocol):
         except Exception:
             logger.exception("Failed to check missing region")
             return None, None
+
+    # ── Admin / Verification Methods ──────────────────────────────────
+
+    async def admin_get_reference_counts(self) -> ReferenceCounts:
+        """Get counts of all reference tables for verification."""
+        counts = ReferenceCounts()
+        if self._db is None:
+            return counts
+
+        try:
+            await self._db.connect()
+            tables = [
+                ("rubric", "rubric"),
+                ("region", "region"),
+                ("organization", "organization"),
+                ("document_type", "document_type"),
+                ("topic", "topic"),
+                ("document", "document"),
+                ("document_section", "document_section"),
+            ]
+            for attr, table in tables:
+                row = await self._db.fetchval(f"SELECT COUNT(*) FROM {table}")
+                setattr(counts, attr, row or 0)
+        except Exception:
+            logger.exception("Failed to get reference counts")
+        return counts
+
+    async def admin_get_qdrant_status(self) -> AdminQdrantStatus:
+        """Get Qdrant collections status for verification."""
+        status = AdminQdrantStatus()
+        if self._qdrant is None:
+            return status
+
+        try:
+            doc_count = await self._qdrant.count()
+            status.documents = QdrantCollectionInfo(exists=True, count=doc_count)
+        except Exception:
+            logger.warning("Failed to count documents collection")
+
+        try:
+            topic_count = await self._qdrant.count_topics()
+            status.topics = QdrantCollectionInfo(exists=True, count=topic_count)
+        except Exception:
+            logger.warning("Failed to count topics collection")
+
+        return status
+
+    async def admin_get_document_status(self, publish_id: str) -> DocumentStatus:
+        """Get full status of a document across DB and Qdrant."""
+        status = DocumentStatus(publish_id=publish_id)
+
+        if self._db is not None:
+            try:
+                await self._db.connect()
+                row = await self._db.fetchrow(
+                    """
+                    SELECT d.id as doc_uuid,
+                           (SELECT COUNT(*) FROM document_section WHERE document_id = d.id) as section_count,
+                           (SELECT COUNT(*) FROM document_rubric dr JOIN rubric r ON r.id = dr.rubric_id WHERE dr.document_id = d.id) as rubric_count
+                    FROM data_source ds
+                    JOIN document d ON d.source_id = ds.id
+                    WHERE d.publish_id = $1
+                    """,
+                    publish_id,
+                )
+                if row:
+                    status.in_postgres = True
+                    status.doc_uuid = str(row["doc_uuid"])
+                    status.section_count = row["section_count"] or 0
+                    status.rubric_count = row["rubric_count"] or 0
+            except Exception:
+                logger.exception("Failed to get document status from DB")
+
+        if self._qdrant is not None and status.doc_uuid:
+            try:
+                chunks = await self._qdrant.get_chunks_by_document_id(f"pravo-{publish_id}")
+                status.chunk_count = len(chunks)
+            except Exception:
+                logger.warning("Failed to get chunk count from Qdrant")
+
+        return status
 
 
 __all__ = [

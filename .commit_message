@@ -1,0 +1,33 @@
+feat: demo pipeline — full request-to-vector-store flow with rubric sync
+
+Реализован полный пайплайн получения ответа из векторного хранилища,
+обогащённого данными из PostgreSQL, в stub-режиме адаптера pravo.
+
+Ключевые изменения:
+
+1. TopicPoint model — Pydantic-модель для хранения вектора рубрики
+   в Qdrant (core/models/models.py)
+
+2. QdrantStore rubric methods — ensure_topic_collection,
+   upsert_topic_vectors, delete_topic_collection, count_topics,
+   delete_all_collections (core/index/qdrant_store.py)
+
+3. get_or_create_topic sync — при создании новой рубрики в PostgreSQL
+   автоматически сохраняет её embedding в Qdrant, если переданы
+   qdrant/embedder параметры (core/persistence/repository/reference_repo.py)
+
+4. Admin/verification API — ReferenceCounts, AdminQdrantStatus,
+   DocumentStatus модели + 3 REST эндпойнта
+   (core/odl_service_protocol.py, core/odl_service.py,
+   core/api/rest_server.py)
+
+5. Скрипты подготовки данных:
+   - scripts/download_and_ocr.py — загрузка PDF + OCR через Yandex Vision
+   - scripts/analyze_documents.py — определение рубрик и регионов
+   - scripts/enrich_documents.py — обогащение org/doc_type метаданными
+   - configs/demo_pipeline.yaml — конфигурация для 5 документов
+   - scripts/load_data.py — очистка + загрузка справочников в БД и Qdrant
+   - scripts/ingest_documents.py — инжест через process_document_text()
+
+6. Unit tests — 44 новых теста (TopicPoint, QdrantStore topic methods,
+   admin REST endpoints); всего 101 passed

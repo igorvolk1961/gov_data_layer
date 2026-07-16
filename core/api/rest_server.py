@@ -41,6 +41,9 @@ class SearchRequest(BaseModel):
 if TYPE_CHECKING:
     from core.odl_service_protocol import ODLServiceProtocol
 
+if TYPE_CHECKING:
+    pass
+
 
 def _add_tracing_middleware(app: FastAPI) -> None:
     """Add tracing middleware that wraps each request in a tracer span.
@@ -235,6 +238,27 @@ def create_app(
             )
         except NotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e)) from None
+
+    # ------------------------------------------------------------------
+    # Admin / Verification endpoints
+    # ------------------------------------------------------------------
+    @app.get("/api/v1/admin/reference-counts")
+    async def admin_reference_counts() -> JSONResponse:
+        """Get counts of all reference tables."""
+        counts = await service.admin_get_reference_counts()
+        return JSONResponse(content=counts.model_dump(mode="json"))
+
+    @app.get("/api/v1/admin/qdrant/collections")
+    async def admin_qdrant_status() -> JSONResponse:
+        """Get Qdrant collections status."""
+        status = await service.admin_get_qdrant_status()
+        return JSONResponse(content=status.model_dump(mode="json"))
+
+    @app.get("/api/v1/admin/documents/{publish_id}/status")
+    async def admin_document_status(publish_id: str) -> JSONResponse:
+        """Get full status of a document."""
+        status = await service.admin_get_document_status(publish_id)
+        return JSONResponse(content=status.model_dump(mode="json"))
 
     return app
 
