@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from adapters.stub import StubAdapter
 from core.errors import NotFoundError
 from core.index.qdrant_store import QdrantStore
 from core.ingest.embedder import Embedder
@@ -67,7 +66,7 @@ def embedder_mock() -> MagicMock:
 @pytest.fixture
 def service(tracer_mock: MagicMock) -> ODLService:
     """ODLService with StubAdapter and a no-op tracer (no Qdrant)."""
-    return ODLService(adapters=[StubAdapter()], tracer=tracer_mock)
+    return ODLService(tracer=tracer_mock)
 
 
 @pytest.fixture
@@ -78,7 +77,6 @@ def qdrant_service(
 ) -> ODLService:
     """ODLService with Qdrant + Embedder mocks for testing search pipeline."""
     return ODLService(
-        adapters=[StubAdapter()],
         tracer=tracer_mock,
         qdrant=qdrant_mock,
         embedder=embedder_mock,
@@ -337,7 +335,6 @@ class TestGetDocumentDetailWithQdrant:
     ) -> ODLService:
         """ODLService with Qdrant mock for detail testing (no embedder needed)."""
         return ODLService(
-            adapters=[StubAdapter()],
             tracer=tracer_mock,
             qdrant=detail_qdrant_mock,
         )
@@ -418,7 +415,6 @@ class TestGetDocumentDetailQdrantFallback:
         error_qdrant_mock: MagicMock,
     ) -> ODLService:
         return ODLService(
-            adapters=[StubAdapter()],
             tracer=tracer_mock,
             qdrant=error_qdrant_mock,
         )
