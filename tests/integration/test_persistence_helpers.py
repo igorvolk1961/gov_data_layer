@@ -478,6 +478,9 @@ async def test_change_tracking_add_and_query(
     import uuid as _uuid
 
     # Create two documents: revoker and revokee
+    # Use unique document number to avoid collisions with existing data
+    revoker_number = f"123-{_uuid.uuid4().hex[:8]}"
+
     revoker_id = await db.fetchval(
         """
         INSERT INTO document (id, source_id, publish_id, title, document_number)
@@ -487,7 +490,7 @@ async def test_change_tracking_add_and_query(
         source_uuid,
         f"revoker-{_uuid.uuid4().hex[:8]}",
         "Revoking Document",
-        "123-ФЗ",
+        revoker_number,
     )
     assert revoker_id is not None
 
@@ -508,7 +511,7 @@ async def test_change_tracking_add_and_query(
     revokee_uuid = str(revokee_id)
 
     # Test resolve_target_document_id by document_number
-    found = await ct_repo.resolve_target_document_id("123-ФЗ")
+    found = await ct_repo.resolve_target_document_id(revoker_number)
     assert found == revoker_uuid, f"Expected {revoker_uuid}, got {found}"
 
     # Test resolve_target_document_id returns None for unknown
