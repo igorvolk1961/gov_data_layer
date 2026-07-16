@@ -1,7 +1,0 @@
-feat: wire section deactivation into ingest pipeline
-
-- After save_analysis_facts(), collect affected section_uuids
-  from SectionFact.target_document_id
-- Call QdrantStore.deactivate_sections() with effective_date
-  (defaults to today if fact has no effective_date)
-- Update query_pipeline_plan.md Step 9 status

@@ -1,8 +1,0 @@
-fix: resolve Qdrant API compatibility issues in build_filter() 
- 
-- Fix IsNullCondition validation error -- FieldCondition.is_null expects bool 
-- Fix Range.gt type error -- store not_actual_since as Unix timestamp 
-- Fix is_null to is_empty -- Qdrant is_null doesnt match absent keys 
-- Remove redundant build_filter() call from odl_service.py 
-- Update unit test for build_filter call moved inside search() 
-- Add _date_to_timestamp() helper function 

@@ -150,7 +150,12 @@ data/output/
 data/chunks/  # Результаты обработки документов
 data/qdrant_storage/  # Хранилище Qdrant
 logs/
+plans/
 *.log
+*.bat
+config.yaml
+.kilorules
+
 
 # Test files (опционально, можно оставить)
 # test_indexing.py

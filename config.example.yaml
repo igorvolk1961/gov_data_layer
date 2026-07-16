@@ -52,4 +52,4 @@ observability:
   langfuse_host: "http://localhost:3000"
   log_level: "INFO"
   log_clear_on_start: false
-  log_file: "data/traces.log"
+  log_file: "logs/traces.log"
