@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import uuid
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -572,10 +573,12 @@ class QdrantStore:
             payload: dict[str, Any] = {
                 "topic_id": topic.topic_id,
                 "name": topic.name,
+                "external_id": topic.id,
             }
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, topic.id))
             points.append(
                 _qdrant_models.PointStruct(
-                    id=topic.id,
+                    id=point_id,
                     vector=topic.embedding,
                     payload=payload,
                 )

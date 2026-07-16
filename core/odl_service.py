@@ -677,7 +677,6 @@ class ODLService(ODLServiceProtocol):
         try:
             await self._db.connect()
             tables = [
-                ("rubric", "rubric"),
                 ("region", "region"),
                 ("organization", "organization"),
                 ("document_type", "document_type"),
@@ -722,8 +721,7 @@ class ODLService(ODLServiceProtocol):
                 row = await self._db.fetchrow(
                     """
                     SELECT d.id as doc_uuid,
-                           (SELECT COUNT(*) FROM document_section WHERE document_id = d.id) as section_count,
-                           (SELECT COUNT(*) FROM document_rubric dr JOIN rubric r ON r.id = dr.rubric_id WHERE dr.document_id = d.id) as rubric_count
+                           (SELECT COUNT(*) FROM document_section WHERE document_id = d.id) as section_count
                     FROM data_source ds
                     JOIN document d ON d.source_id = ds.id
                     WHERE d.publish_id = $1
@@ -734,7 +732,6 @@ class ODLService(ODLServiceProtocol):
                     status.in_postgres = True
                     status.doc_uuid = str(row["doc_uuid"])
                     status.section_count = row["section_count"] or 0
-                    status.rubric_count = row["rubric_count"] or 0
             except Exception:
                 logger.exception("Failed to get document status from DB")
 

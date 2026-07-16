@@ -44,7 +44,7 @@ _SIGNATORY_AUTHORITIES_PATH = "/api/SignatoryAuthorities"
 _DOCUMENT_TYPES_PATH = "/api/DocumentTypes"
 _DOCUMENTS_PATH = "/api/Documents"
 _DOCUMENT_PATH = "/api/Document"
-_DOCUMENT_PDF_PATH = "/api/Document/Pdf"
+_DOCUMENT_PDF_PATH = "/file/pdf"
 
 # Non-retryable HTTP status codes
 _NON_RETRYABLE_STATUSES = {400, 401, 403, 404, 405}

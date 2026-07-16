@@ -22,7 +22,6 @@ from core.persistence.db_client import DatabaseClient
 if TYPE_CHECKING:
     from core.index.qdrant_store import QdrantStore
     from core.ingest.embedder import Embedder
-    from core.models.models import TopicPoint
 
 logger = get_logger(__name__)
 
@@ -120,12 +119,17 @@ class ReferenceRepository:
         source_id: str,
         external_id: str,
         name: str,
-        parent_id: str | None = None,
-        description: str | None = None,
+        parent_id: str | None = None,  # noqa: ARG002 — accepted for API compat (topic table has no parent_id)
+        description: str | None = None,  # noqa: ARG002 — accepted for API compat (topic table has no description)
         qdrant: QdrantStore | None = None,
         embedder: Embedder | None = None,
     ) -> tuple[str, bool]:
         """Get or create a topic record.
+
+        Note: The ``topic`` table has no parent_id column (hierarchy is
+        supported by the ``rubric`` table instead). The ``parent_id`` and
+        ``description`` parameters are accepted for API compatibility but
+        ignored when inserting into the ``topic`` table.
 
         If the topic is newly created and ``qdrant``/``embedder`` are provided,
         the topic name is automatically embedded and stored as a vector
@@ -135,8 +139,8 @@ class ReferenceRepository:
             source_id: UUID of the data source.
             external_id: External topic identifier.
             name: Topic name.
-            parent_id: Optional parent topic UUID.
-            description: Optional topic description.
+            parent_id: Ignored (topic table has no parent_id column).
+            description: Ignored (topic table has no description column).
             qdrant: Optional QdrantStore for automatic vector sync.
             embedder: Optional Embedder for creating embeddings.
 
@@ -159,19 +163,15 @@ class ReferenceRepository:
 
         result = await self._db.fetchrow(
             """
-            INSERT INTO topic (source_id, external_id, name, parent_id, description)
-            VALUES ($1::uuid, $2, $3, $4::uuid, $5)
+            INSERT INTO topic (source_id, external_id, name)
+            VALUES ($1::uuid, $2, $3)
             ON CONFLICT (source_id, external_id) DO UPDATE
-                SET name = EXCLUDED.name,
-                    parent_id = COALESCE($4::uuid, topic.parent_id),
-                    description = COALESCE($5, topic.description)
+                SET name = EXCLUDED.name
             RETURNING id
             """,
             source_id,
             external_id,
             name,
-            parent_id,
-            description,
         )
         assert result is not None
         topic_uuid = str(result["id"])
@@ -179,8 +179,10 @@ class ReferenceRepository:
         # Auto-sync to Qdrant if a new topic was created
         if qdrant is not None and embedder is not None:
             try:
+                from core.models.models import TopicPoint as _TopicPoint
+
                 embedding = await embedder.embed([name])
-                topic_point = TopicPoint(
+                topic_point = _TopicPoint(
                     id=external_id,
                     topic_id=topic_uuid,
                     name=name,

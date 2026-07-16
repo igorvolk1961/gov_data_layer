@@ -24,7 +24,6 @@ from core.models.models import (
 class ReferenceCounts(BaseModel):
     """Counts of records in reference tables for admin verification."""
 
-    rubric: int = 0
     region: int = 0
     organization: int = 0
     document_type: int = 0
@@ -55,7 +54,6 @@ class DocumentStatus(BaseModel):
     doc_uuid: str | None = None
     chunk_count: int = 0
     section_count: int = 0
-    rubric_count: int = 0
 
 
 @runtime_checkable

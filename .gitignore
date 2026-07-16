@@ -157,5 +157,7 @@ config.yaml
 .kilorules
 
 
+output/
+
 # Test files (опционально, можно оставить)
 # test_indexing.py
