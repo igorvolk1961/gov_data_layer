@@ -254,13 +254,11 @@ def _null_context() -> _NullContext:
 
 async def link_sections_to_topics(
     chunks: list[DocumentChunk],
-    resolved_section_uuids: dict[str, str],
     embedder: Embedder | None = None,
     qdrant: QdrantStore | None = None,
     section_topic_repo: Any = None,
     max_topics_per_section: int = 3,
     score_threshold: float = 0.25,
-    tracer: Any = None,
     parent_span: Any = None,
 ) -> int:
     """Link document sections to semantically similar topics (rubrics).
@@ -270,7 +268,6 @@ async def link_sections_to_topics(
 
     Args:
         chunks: List of DocumentChunk from the pipeline.
-        resolved_section_uuids: Dict mapping external_id -> section UUID.
         embedder: Embedder instance (lazy-init if None).
         qdrant: QdrantStore instance (lazy-init if None).
         section_topic_repo: SectionTopicRepository instance.
@@ -280,7 +277,7 @@ async def link_sections_to_topics(
     Returns:
         Total number of section-topic links created.
     """
-    if not resolved_section_uuids or not chunks or section_topic_repo is None:
+    if not chunks or section_topic_repo is None:
         return 0
 
     # Lazy init (same pattern as process_document_text)

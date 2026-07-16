@@ -172,7 +172,7 @@ async def main():
                 if chunks and db:
                     st_repo = SectionTopicRepository(db)
                     links = await link_sections_to_topics(
-                        chunks, {},
+                        chunks,
                         embedder=embedder, qdrant=qdrant,
                         section_topic_repo=st_repo,
                         parent_span=content_span,
