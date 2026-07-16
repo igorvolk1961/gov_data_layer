@@ -375,8 +375,11 @@ class QdrantStore:
                     )
                 )
             if context.max_age_days is not None:
-                from datetime import datetime, timezone, timedelta
-                cutoff = (datetime.now(timezone.utc) - timedelta(days=context.max_age_days)).isoformat()
+                from datetime import datetime, timedelta, timezone
+
+                cutoff = (
+                    datetime.now(timezone.utc) - timedelta(days=context.max_age_days)
+                ).isoformat()
                 conditions.append(
                     _qdrant_models.FieldCondition(
                         key="data_freshness",

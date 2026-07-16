@@ -572,6 +572,14 @@ class ODLService(ODLServiceProtocol):
             if section_repo is None:
                 span.set_output({"count": 0, "reason": "no_database"})
                 return []
+
+            # Check document existence
+            doc_repo = self._doc_repo_lazy
+            if doc_repo is not None:
+                doc = await doc_repo.get_document_by_id(document_id)
+                if doc is None:
+                    raise NotFoundError(f"Document {document_id} not found")
+
             try:
                 result = await section_repo.get_toc(  # type: ignore[attr-defined]
                     document_uuid=document_id,

@@ -44,5 +44,5 @@ C4Container
     Rel(stub_adapter, index, "запись чанков в Qdrant")
     Rel(stub_adapter, metadata_db, "запись метаданных в PostgreSQL")
 
-    UpdateLayoutConfig($c4ShapeInRow="3")
+    UpdateLayoutConfig($c4ShapeInRow="4")
 ```

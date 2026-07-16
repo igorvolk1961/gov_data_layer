@@ -57,10 +57,11 @@ def ref_repo_mock() -> MagicMock:
     mock = MagicMock()
     topic = TopicNode(id="topic-1", name="Рубрика 1", parent_id="")
 
-    async def _list_topics(_parent_id: str | None = None, query: str = "") -> list[TopicNode]:
+    async def _list_topics(**kwargs: object) -> list[TopicNode]:
+        query = str(kwargs.get("query", ""))
         if query and query.lower() not in topic.name.lower():
             return []
-        # _parent_id is passed through — mock returns data for any parent_id
+        # parent_id is passed through — mock returns data for any parent_id
         return [topic]
 
     mock.list_topics = AsyncMock(side_effect=_list_topics)
@@ -740,8 +741,11 @@ class TestGetToc:
     pytestmark = pytest.mark.asyncio
 
     @pytest.fixture(autouse=True)
-    def _setup_repos(self, service: ODLService, section_repo_mock: MagicMock) -> None:
+    def _setup_repos(
+        self, service: ODLService, section_repo_mock: MagicMock, doc_repo_mock: MagicMock
+    ) -> None:
         service._section_repo = section_repo_mock
+        service._doc_repo = doc_repo_mock
 
     async def test_returns_list_of_toc_nodes(
         self,
