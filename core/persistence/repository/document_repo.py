@@ -138,6 +138,10 @@ class DocumentRepository:
         # publish_id — сырой идентификатор документа из источника
         publish_id = doc.publish_id
 
+        # Store document URL in meta (no dedicated url column)
+        meta = dict(doc.meta) if doc.meta else {}
+        meta["url"] = doc.url
+
         # Upsert the document
         result = await self._db.fetchrow(
             """
@@ -183,7 +187,7 @@ class DocumentRepository:
             doc.publish_date,
             doc.valid_to,
             doc.created_at,
-            DatabaseClient.serialize_jsonb(doc.meta),
+            DatabaseClient.serialize_jsonb(meta),
         )
 
         assert result is not None
@@ -286,7 +290,7 @@ class DocumentRepository:
                 url=row["source_url"],
                 jurisdiction=row["source_jurisdiction"],
             ),
-            url=row["source_url"],
+            url=meta.get("url", row["source_url"]),
             summary=row["summary"],
             jurisdiction=row["jurisdiction_name"],
             region=row["region_name"],

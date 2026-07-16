@@ -14,6 +14,7 @@ https://yandex.cloud/ru/docs/ocr/api-ref/OCR/recognizeText
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from typing import Any
 
@@ -265,7 +266,9 @@ class YandexVisionOCR:
                     headers["Authorization"] = auth_header
                     continue
                 if e.response.status_code in (429, 500, 502, 503):
-                    # Rate limit or server error — retry
+                    # Rate limit or server error — retry with backoff
+                    delay = min(2**attempt, 30)  # 2, 4, 8... up to 30s
+                    await asyncio.sleep(delay)
                     continue
                 raise OCRUnavailableError(
                     f"Yandex OCR API returned HTTP {e.response.status_code}: "

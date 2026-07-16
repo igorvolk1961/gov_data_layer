@@ -140,12 +140,15 @@ class ProductionIngestHandler(BaseIngestHandler):
             return total_count
 
     async def _get_doc_uuid(self, publish_id: str) -> str:
-        """Get document UUID from DB after persistence."""
-        doc_repo = self._adapter._doc_repo_lazy
-        if doc_repo is None:
+        """Get document UUID from DB after persistence (real UUID, not external ID)."""
+        db = self._adapter._db
+        if db is None:
             return ""
-        doc = await doc_repo.get_document_by_publish_id(publish_id)
-        return doc.id if doc else ""
+        row = await db.fetchval(
+            "SELECT id FROM document WHERE publish_id = $1",
+            publish_id,
+        )
+        return str(row) if row else ""
 
 
 __all__ = [

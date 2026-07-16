@@ -382,7 +382,7 @@ class TestAdminReferenceCounts:
         from core.odl_service_protocol import ReferenceCounts
 
         mock_service.admin_get_reference_counts.return_value = ReferenceCounts(
-            rubric=3,
+            section_topic=3,
             region=2,
             organization=4,
             document_type=5,
@@ -393,7 +393,7 @@ class TestAdminReferenceCounts:
         resp = client.get("/api/v1/admin/reference-counts")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["rubric"] == 3
+        assert data["section_topic"] == 3
         assert data["region"] == 2
         assert data["document"] == 5
         assert data["document_section"] == 12

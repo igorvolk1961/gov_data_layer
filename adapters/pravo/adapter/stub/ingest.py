@@ -51,13 +51,15 @@ class StubIngestHandler(BaseIngestHandler):
                     # 1. Get metadata (also persists to DB via _persist_document)
                     await adapter.get(document_id)  # type: ignore[attr-defined]
 
-                    # 2. Get doc_uuid from DB
-                    doc_repo = adapter._doc_repo_lazy
+                    # 2. Get doc_uuid from DB (real UUID, not external ID)
                     doc_uuid = ""
-                    if doc_repo is not None:
-                        db_doc = await doc_repo.get_document_by_publish_id(publish_id)
-                        if db_doc:
-                            doc_uuid = db_doc.id
+                    if adapter._db is not None:
+                        row = await adapter._db.fetchval(
+                            "SELECT id FROM document WHERE publish_id = $1",
+                            publish_id,
+                        )
+                        if row:
+                            doc_uuid = str(row)
 
                     # 3. Get text via OCR (from cache in stub mode)
                     text = await adapter.get_content(document_id)  # type: ignore[attr-defined]

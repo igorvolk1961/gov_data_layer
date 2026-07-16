@@ -107,7 +107,12 @@ class TestQdrantStoreTopicMethods:
         call_kwargs = mock_client.upsert.call_args[1]
         assert call_kwargs["collection_name"] == "topics"
         assert len(call_kwargs["points"]) == 1
-        assert call_kwargs["points"][0].id == "labor-law"
+        import uuid
+
+        point_id = call_kwargs["points"][0].id
+        # Now point IDs are UUID v5 from external_id
+        uuid.UUID(point_id)  # validate UUID format
+        assert call_kwargs["points"][0].payload["external_id"] == "labor-law"
 
     @patch("core.index.qdrant_store._HAS_QDRANT", True)
     async def test_count_topics_with_client(self) -> None:
