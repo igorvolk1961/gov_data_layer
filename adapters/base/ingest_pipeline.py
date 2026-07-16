@@ -336,8 +336,9 @@ async def link_sections_to_topics(
                 )
 
                 # 3. Link to topics via SectionTopicRepository
+                # Use topic_id (DB UUID from Qdrant payload), NOT topic_uuid (Qdrant point ID)
                 links = [
-                    {"section_id": sec_uuid, "topic_id": m["topic_uuid"], "score": m["score"]}
+                    {"section_id": sec_uuid, "topic_id": m["topic_id"], "score": m["score"]}
                     for m in matches
                 ]
                 if links:
