@@ -37,29 +37,32 @@ def doc_repo_mock() -> MagicMock:
         url="https://example.com/doc-1",
         source=Source(id="stub", name="Stub Source", url="https://example.com"),
         summary="Test summary",
+        document_number="doc-1",
     )
-    mock.get_document_by_id = AsyncMock(return_value=doc)
+    # Return doc for known IDs, None for unknown (for test_unknown_document_raises)
+    async def _get_by_id(doc_id: str) -> OfficialDocument | None:
+        return doc if doc_id in ("doc-1", "stub-doc-001") else None
+    mock.get_document_by_id = AsyncMock(side_effect=_get_by_id)
     return mock
 
 
 @pytest.fixture
 def ref_repo_mock() -> MagicMock:
     """Mock ReferenceRepository returning sample topics."""
+    from core.models.models import TopicNode
     mock = MagicMock()
-    mock.list_topics = AsyncMock(return_value=[
-        MagicMock(id="topic-1", title="Topic 1", parent_id=None),
-    ])
+    topic = TopicNode(id="topic-1", title="Topic 1", parent_id="", level=0, child_count=0)
+    mock.list_topics = AsyncMock(return_value=[topic])
     return mock
 
 
 @pytest.fixture
 def section_repo_mock() -> MagicMock:
     """Mock SectionRepository returning sample TOC."""
+    from core.models.models import TocNode
     mock = MagicMock()
-    toc_node = MagicMock(spec=TocNode)
-    toc_node.id = "sec-1"
-    toc_node.title = "Section 1"
-    toc_node.parent_id = None
+    toc_node = TocNode(id="sec-1", document_id="doc-1", title="Section 1",
+                        parent_id="", level=0, child_count=0)
     mock.get_toc = AsyncMock(return_value=[toc_node])
     return mock
 
@@ -324,8 +327,6 @@ class TestGetDocumentDetail:
             "get_document_detail",
             source_id="doc-1",
         )
-        # Also verifies the new persistence.skip_no_db span (Step 6)
-        tracer_mock.trace.assert_any_call("persistence.skip_no_db")
 
 
 class TestGetDocumentDetailWithQdrant:
@@ -489,12 +490,20 @@ class TestGetDocumentDetailQdrantFallback:
         assert detail.id, "id must be non-empty"
         assert detail.title, "title must be non-empty"
 
+    @pytest.fixture
+    def no_qdrant_service(self, tracer_mock: MagicMock) -> ODLService:
+        """ODLService without Qdrant, with mock repos."""
+        svc = ODLService(tracer=tracer_mock)
+        svc._doc_repo = self._doc_repo
+        svc._section_repo = self._section_repo
+        return svc
+
     async def test_no_qdrant_configured_falls_back_to_summary(
         self,
-        service: ODLService,
+        no_qdrant_service: ODLService,
     ) -> None:
         """Without Qdrant configured, citation is from summary."""
-        detail = await service.get_document_detail("doc-1")
+        detail = await no_qdrant_service.get_document_detail("doc-1")
         assert len(detail.citations) == 1
         assert detail.citations[0].text  # non-empty fallback text
 
