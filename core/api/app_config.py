@@ -76,6 +76,16 @@ class EmbeddingConfig:
 
 
 @dataclass
+class IngestConfig:
+    """Ingest configuration."""
+
+    auto_start: bool = False
+    sources: list[str] = field(default_factory=lambda: ["adapters.stub:StubAdapter"])
+    interval_hours: int = 24
+    enabled: bool = False
+
+
+@dataclass
 class ServerConfig:
     """Server configuration."""
 
@@ -110,6 +120,7 @@ class AppConfig:
     ocr: OCRConfig = field(default_factory=OCRConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
+    ingest: IngestConfig = field(default_factory=IngestConfig)
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     redis_host: str = "localhost"
@@ -209,11 +220,21 @@ class AppConfig:
             vector_size=int(emb_cfg.get("vector_size", 384)),
         )
 
+        # --- Ingest ---
+        ingest_cfg = cfg.get("ingest", {})
+        ingest = IngestConfig(
+            auto_start=bool(ingest_cfg.get("auto_start", False)),
+            sources=[str(s) for s in ingest_cfg.get("sources", ["adapters.stub:StubAdapter"])],
+            interval_hours=int(ingest_cfg.get("interval_hours", 24)),
+            enabled=bool(ingest_cfg.get("enabled", False)),
+        )
+
         return cls(
             server=server,
             ocr=ocr,
             embedding=embedding,
             observability=observability,
+            ingest=ingest,
             qdrant_host=qdrant_host,
             qdrant_port=qdrant_port,
             redis_host=redis_host,
