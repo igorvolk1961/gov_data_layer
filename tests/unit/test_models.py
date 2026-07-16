@@ -274,7 +274,6 @@ class TestSearchContext:
         assert ctx.region is None
         assert ctx.topic is None
         assert ctx.organization is None
-        assert ctx.official_only is False
         assert ctx.max_age_days is None
         assert ctx.max_results == 10
         assert ctx.offset == 0
@@ -284,7 +283,6 @@ class TestSearchContext:
             region="Москва",
             topic=["налоги", "земельное право"],
             organization=["ФНС", "Минюст"],
-            official_only=True,
             max_age_days=30,
             max_results=25,
             offset=50,
@@ -292,7 +290,6 @@ class TestSearchContext:
         assert ctx.region == "Москва"
         assert ctx.topic == ["налоги", "земельное право"]
         assert ctx.organization == ["ФНС", "Минюст"]
-        assert ctx.official_only is True
         assert ctx.max_age_days == 30
         assert ctx.max_results == 25
         assert ctx.offset == 50

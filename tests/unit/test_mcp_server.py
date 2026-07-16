@@ -157,7 +157,6 @@ class TestSearchDocuments:
         assert context.region == "Московская область"
         assert context.topic == ["taxes"]
         assert context.organization == ["FNS"]
-        assert context.official_only is True
         assert context.max_age_days == 30
 
     @pytest.mark.asyncio

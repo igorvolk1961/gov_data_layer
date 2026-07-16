@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
 
@@ -23,7 +23,45 @@ from core.models.models import (
     TocNode,
     TopicNode,
 )
+from core.models.models import OfficialDocument, Source
 from core.odl_service import ODLService
+
+
+@pytest.fixture
+def doc_repo_mock() -> MagicMock:
+    """Mock DocumentRepository returning a sample OfficialDocument."""
+    mock = MagicMock()
+    doc = OfficialDocument(
+        id="stub-doc-001",
+        title="Test Document Title",
+        url="https://example.com/doc-1",
+        source=Source(id="stub", name="Stub Source", url="https://example.com"),
+        summary="Test summary",
+    )
+    mock.get_document_by_id = AsyncMock(return_value=doc)
+    return mock
+
+
+@pytest.fixture
+def ref_repo_mock() -> MagicMock:
+    """Mock ReferenceRepository returning sample topics."""
+    mock = MagicMock()
+    mock.list_topics = AsyncMock(return_value=[
+        MagicMock(id="topic-1", title="Topic 1", parent_id=None),
+    ])
+    return mock
+
+
+@pytest.fixture
+def section_repo_mock() -> MagicMock:
+    """Mock SectionRepository returning sample TOC."""
+    mock = MagicMock()
+    toc_node = MagicMock(spec=TocNode)
+    toc_node.id = "sec-1"
+    toc_node.title = "Section 1"
+    toc_node.parent_id = None
+    mock.get_toc = AsyncMock(return_value=[toc_node])
+    return mock
 
 
 @pytest.fixture
@@ -332,12 +370,17 @@ class TestGetDocumentDetailWithQdrant:
         self,
         tracer_mock: MagicMock,
         detail_qdrant_mock: MagicMock,
+        doc_repo_mock: MagicMock,
+        section_repo_mock: MagicMock,
     ) -> ODLService:
-        """ODLService with Qdrant mock for detail testing (no embedder needed)."""
-        return ODLService(
+        """ODLService with Qdrant mock for detail testing."""
+        svc = ODLService(
             tracer=tracer_mock,
             qdrant=detail_qdrant_mock,
         )
+        svc._doc_repo = doc_repo_mock
+        svc._section_repo = section_repo_mock
+        return svc
 
     async def test_citations_from_qdrant_chunks(
         self,
