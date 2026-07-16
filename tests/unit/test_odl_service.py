@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -16,14 +16,15 @@ from core.models.models import (
     DocumentChunk,
     DocumentDetail,
     LegalStatus,
+    OfficialDocument,
     SearchContext,
     SearchResponse,
     SearchResult,
+    Source,
     SourceAvailability,
     TocNode,
     TopicNode,
 )
-from core.models.models import OfficialDocument, Source
 from core.odl_service import ODLService
 
 
@@ -51,8 +52,13 @@ def ref_repo_mock() -> MagicMock:
     """Mock ReferenceRepository returning sample topics."""
     from core.models.models import TopicNode
     mock = MagicMock()
-    topic = TopicNode(id="topic-1", title="Topic 1", parent_id="", level=0, child_count=0)
-    mock.list_topics = AsyncMock(return_value=[topic])
+    topic = TopicNode(id="topic-1", name="Рубрика 1", parent_id="")
+    async def _list_topics(parent_id: str | None = None, query: str = "") -> list[TopicNode]:
+        if query and query.lower() not in topic.name.lower():
+            return []
+        # parent_id is passed through — mock returns data for any parent_id
+        return [topic]
+    mock.list_topics = AsyncMock(side_effect=_list_topics)
     return mock
 
 
@@ -61,9 +67,17 @@ def section_repo_mock() -> MagicMock:
     """Mock SectionRepository returning sample TOC."""
     from core.models.models import TocNode
     mock = MagicMock()
-    toc_node = TocNode(id="sec-1", document_id="doc-1", title="Section 1",
+    toc_node = TocNode(id="sec-1", document_id="doc-1", title="Глава 1 — Основные положения",
                         parent_id="", level=0, child_count=0)
-    mock.get_toc = AsyncMock(return_value=[toc_node])
+    child_node = TocNode(id="sec-1-1", document_id="doc-1", title="Статья 1",
+                          parent_id="sec-1", level=1, child_count=0)
+    async def _get_toc(document_uuid: str, parent_section_id: str | None = None) -> list[TocNode]:
+        if parent_section_id == "sec-1":
+            return [child_node]  # return children for known parent
+        if parent_section_id:
+            return []
+        return [toc_node] if document_uuid in ("doc-1", "stub-doc-001") else []
+    mock.get_toc = AsyncMock(side_effect=_get_toc)
     return mock
 
 
@@ -668,12 +682,12 @@ class TestListTopics:
     async def test_filter_by_query_with_parent(
         self,
         service: ODLService,
+        ref_repo_mock: MagicMock,
     ) -> None:
         """Query filters child topics when parent_id is specified."""
-        filtered = await service.list_topics(parent_id="topic-root", query="налог")
+        filtered = await service.list_topics(parent_id="topic-root", query="рубрик")
         assert len(filtered) > 0
-        for t in filtered:
-            assert "налог" in t.name.lower()
+        ref_repo_mock.list_topics.assert_awaited_with(parent_id="topic-root", query="рубрик")
 
     async def test_query_no_match_returns_empty(
         self,
