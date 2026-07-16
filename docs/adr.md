@@ -1015,3 +1015,86 @@ if self._db is None:
 - **Healthcheck**: статус БД в `/health`
 - **Docstring**: убраны упоминания «опциональности» персистентности — persistence mandatory when configured
 - **Тесты**: 460 unit-тестов проходят без изменений (StubAdapter не использует БД)
+
+---
+
+## 18. Metadata Routing вместо Router — адаптеры только для инжеста
+
+**Дата:** 2026-07-16
+
+### Проблема
+
+Исходная архитектура предполагала отдельный компонент «Роутер», который выбирает адаптер источника по контексту запроса и делегирует ему поиск. Однако на практике:
+
+1. **Поиск работает напрямую через Qdrant**, без участия адаптеров. `search_documents()` не вызывает ни один адаптер — все данные уже в индексе.
+2. **Роутер как отдельный компонент не существует** — выбор источника происходит косвенно, через фильтрацию чанков по метаданным (region, topic).
+3. **`ODLService` всё ещё принимает `SourceAdapter`**, но использует их только в `get_document_detail()` (получение текста) и `get_toc()` — оба метода могут работать через Qdrant + PostgreSQL.
+
+### Решение
+
+**Metadata Routing** — перенаправление запроса к данным из определённого источника происходит исключительно через фильтрацию payload в Qdrant. Поля `region`, `topic`, `organization` из `SearchContext` транслируются в payload filter.
+
+**Адаптеры источников используются только на этапе инжеста** (загрузка и нормализация данных в индекс). `ODLService` не принимает адаптеры и не зависит от них.
+
+### Детали
+
+#### Поиск (search_documents)
+```python
+# Было: поиск без фильтрации по контексту
+chunks = await qdrant.search(query_vector, limit=max_results)
+
+# Стало: Metadata Routing через payload filter
+filters = {
+    "region": context.region,      # если указан
+    "topic": context.topic,        # если указан
+    "organization": context.organization,  # если указана
+}
+chunks = await qdrant.search(query_vector, filters=filters, limit=max_results)
+```
+
+#### Деталь документа (get_document_detail)
+```python
+# Было: через адаптер
+adapter = self._get_adapter(source_id)
+doc = await adapter.get(source_id)
+
+# Стало: сборка из чанков Qdrant + обогащение из PostgreSQL
+chunks = await qdrant.get_chunks_by_document_id(doc_id)
+meta = await doc_repo.get_document_by_id(doc_id)
+```
+
+#### Оглавление (get_toc) и рубрикатор (list_topics)
+```python
+# Было: через адаптер
+toc = await adapter.get_toc(document_id)
+
+# Стало: из PostgreSQL
+toc = await section_repo.get_toc(doc_uuid)
+```
+
+### Удалённые и изменённые компоненты
+
+| Компонент | Статус |
+|-----------|--------|
+| `ODLService._adapters` | **Удалён** — ODLService не хранит и не принимает адаптеры |
+| `ODLService._get_adapter()` | **Удалён** |
+| `ODLService.__init__(adapters=...)` | **Удалён параметр** |
+| `Router` (контейнер в C4) | **Удалён из C4** — роутинг через Metadata Routing |
+| `SearchContext.official_only` | **Удалён** — слой по определению официальный |
+| `Ingest Worker` | **Выделен** — отдельный модуль/CLI, не связанный с ODLService |
+
+### Рассмотренные альтернативы
+
+1. **Оставить как есть (ODLService + adapters)** — отклонено. Создаёт ложное впечатление, что core зависит от адаптеров при поиске. На деле адаптеры используются только для `get_document_detail` и `get_toc`, которые можно переписать через Qdrant/PG.
+
+2. **Сохранить Router как отдельный компонент** — отклонено. Роутер, который не выбирает адаптер, а только транслирует контекст в фильтры Qdrant — избыточная абстракция. Это логика одного метода в `ODLService`.
+
+3. **SourceId в фильтрах** — отклонено. Если в фильтры добавить `source_id`, это нарушит принцип косвенного роутинга. Источник определяется не напрямую, а через регион и темы.
+
+### Последствия
+
+- `ODLService` чище: не знает про адаптеры, работает только с Qdrant + PostgreSQL + Redis
+- Адаптеры — pure ingest-компоненты, их можно добавлять/удалять без изменения core
+- Metadata Routing даёт гибкость: новый источник не требует кода в core, только настройку инжеста и payload
+- `official_only` удалён из контракта — слой по определению официальный
+- Инжест вынесен из ODLService — может быть отдельным процессом или CLI

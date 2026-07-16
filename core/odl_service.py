@@ -1,8 +1,8 @@
 """ODLService — единый core-класс, реализующий ODLServiceProtocol.
 
-Принимает список SourceAdapter'ов (через DI) и делегирует им методы Protocol.
-При поиске опрашивает все адаптеры и агрегирует результаты.
-При получении конкретного документа определяет нужный адаптер по source_id.
+Работает через Metadata Routing: поиск напрямую через Qdrant с фильтрацией
+по метаданным (region, topic). Адаптеры источников не используются —
+они работают только на этапе инжеста (загрузка данных в индекс).
 
 Поддерживает персистентность в PostgreSQL через DatabaseClient и репозитории.
 Если DatabaseClient передан — персистентность обязательна, ошибки БД
@@ -13,10 +13,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 from core.cache import CacheClient
-from core.errors import NotFoundError
 from core.index.qdrant_store import QdrantStore
 from core.ingest.embedder import Embedder
 from core.models.models import (
@@ -43,20 +41,15 @@ from core.persistence.repository import (
     SectionRepository,
 )
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from adapters.base import SourceAdapter
-    from core.models.models import OfficialDocument
-
 logger = get_logger(__name__)
 
 
 class ODLService(ODLServiceProtocol):
     """Единый core-класс ODLService.
 
-    Принимает список SourceAdapter'ов (через DI) и делегирует им методы Protocol.
-    При поиске опрашивает все адаптеры и агрегирует результаты.
+    Не зависит от SourceAdapter'ов — адаптеры используются только на этапе
+    инжеста. Поиск работает через Metadata Routing: Qdrant с фильтрацией
+    по region, topic, organization.
 
     Принимает DatabaseClient для персистентности в PostgreSQL.
     Если передан — персистентность обязательна, ошибки БД пробрасываются наверх.
@@ -65,14 +58,12 @@ class ODLService(ODLServiceProtocol):
 
     def __init__(
         self,
-        adapters: Sequence[SourceAdapter],
         tracer: Tracer | None = None,
         cache: CacheClient | None = None,
         db: DatabaseClient | None = None,
         qdrant: QdrantStore | None = None,
         embedder: Embedder | None = None,
     ) -> None:
-        self._adapters = list(adapters)
         self._tracer: Tracer | None = tracer
         self._cache: CacheClient | None = cache
         self._db: DatabaseClient | None = db
@@ -82,12 +73,6 @@ class ODLService(ODLServiceProtocol):
         self._ref_repo: ReferenceRepository | None = None
         self._section_repo: SectionRepository | None = None
         self._change_repo: ChangeTrackingRepository | None = None
-
-        # Pass DatabaseClient to adapters that support it
-        if db is not None:
-            for adapter in self._adapters:
-                if hasattr(adapter, "_db"):
-                    adapter._db = db
 
     @property
     def tracer(self) -> Tracer:
@@ -191,19 +176,6 @@ class ODLService(ODLServiceProtocol):
             with self.tracer.trace("persistence.sections_upserted") as span:
                 span.set_output({"count": len(section_map)})
 
-    def _get_adapter(self, source_id: str) -> SourceAdapter:
-        """Find the adapter that owns the given source_id.
-
-        Matches by prefix: if source_id starts with adapter.source_id + '-',
-        or equals adapter.source_id, that adapter is selected.
-        Falls back to the first adapter if no match is found.
-        """
-        for adapter in self._adapters:
-            if source_id == adapter.source_id or source_id.startswith(f"{adapter.source_id}-"):
-                return adapter
-        # Fallback to first adapter
-        return self._adapters[0]
-
     async def search_documents(
         self,
         query: str,
@@ -295,93 +267,85 @@ class ODLService(ODLServiceProtocol):
         self,
         source_id: str,
     ) -> DocumentDetail:
-        """Полная карточка документа — делегирует адаптеру по source_id.
+        """Полная карточка документа — сборка из Qdrant + PostgreSQL.
 
-        После получения документа от адаптера:
-        1. Пытается найти чанки документа в Qdrant (через document_id).
-        2. Группирует чанки по section_path, объединяет тексты с учётом
-           перекрытия, создаёт по одной Citation на раздел.
-        3. Если Qdrant недоступен или чанков нет — текущее поведение
-           (Citation из summary/title).
-
-        Затем сохраняет документ в PostgreSQL (если DatabaseClient передан).
-        Ошибка БД не ломает ответ — данные возвращаются агенту.
+        1. Получает метаданные документа из PostgreSQL (через doc_repo).
+        2. Получает чанки документа из Qdrant, собирает цитаты.
+        3. Получает TOC из PostgreSQL (через section_repo).
+        4. Если БД недоступна — NotFoundError.
         """
         with self.tracer.trace("get_document_detail", source_id=source_id) as span:
             span.set_input({"source_id": source_id})
-            adapter = self._get_adapter(source_id)
-            doc = await adapter.get(source_id)
-            try:
-                toc = await adapter.get_toc(document_id=doc.id)
-            except NotFoundError:
-                with self.tracer.trace("detail.toc_not_found") as toc_span:
-                    toc_span.set_input({"document_id": doc.id, "source_id": source_id})
-                toc = []
 
-            # Build citations from Qdrant chunks (if available)
-            citations = await self._build_citations_from_qdrant(doc, toc)
+            # Get document metadata from PostgreSQL
+            doc_repo = self._doc_repo_lazy
+            if doc_repo is None:
+                raise NotFoundError(f"Document {source_id} not found (no database configured)")
+
+            doc_meta = await doc_repo.get_document_by_id(source_id)
+            if doc_meta is None:
+                raise NotFoundError(f"Document {source_id} not found")
+
+            # Get TOC from PostgreSQL
+            section_repo = self._section_repo_lazy
+            toc: list[TocNode] = []
+            if section_repo is not None:
+                try:
+                    toc = await section_repo.get_toc(doc_meta.id)
+                except Exception:
+                    logger.exception("Failed to get TOC for document %s", source_id)
+
+            # Build citations from Qdrant chunks
+            citations = await self._build_citations_from_qdrant(
+                doc_id=doc_meta.id,
+                doc_url=doc_meta.url or "",
+                doc_title=doc_meta.title or "",
+                toc=toc,
+            )
 
             detail = DocumentDetail(
-                id=doc.id,
-                title=doc.title,
-                url=doc.url,
-                source_name=doc.source.name,
-                jurisdiction=doc.jurisdiction,
-                region=doc.region,
-                topic=doc.topic,
-                organization=[doc.organization] if doc.organization else [],
-                created_at=doc.created_at,
-                valid_from=doc.valid_from,
-                valid_to=doc.valid_to,
-                legal_status=doc.legal_status,
+                id=doc_meta.id,
+                title=doc_meta.title or "",
+                url=doc_meta.url or "",
+                source_name=doc_meta.source.name if doc_meta.source else "",
+                jurisdiction=doc_meta.jurisdiction,
+                region=doc_meta.region,
+                topic=doc_meta.topic,
+                organization=[doc_meta.organization] if doc_meta.organization else [],
+                created_at=doc_meta.created_at,
+                valid_from=doc_meta.valid_from,
+                valid_to=doc_meta.valid_to,
+                legal_status=doc_meta.legal_status,
                 citations=citations,
                 toc=toc,
             )
             span.set_output({"document_id": detail.id, "title": detail.title})
 
-        # Persist to PostgreSQL outside the tracing span (side-effect, not core logic)
-        # Graceful degradation: ошибка БД не ломает ответ агента
-        try:
-            await self._persist_document(doc, source_id, toc)
-        except Exception as exc:
-            with self.tracer.trace("persistence.failed") as span:
-                span.set_input(
-                    {
-                        "document_id": doc.id,
-                        "source_id": source_id,
-                    }
-                )
-                span.set_error(exc)
-
         return detail
 
     async def _build_citations_from_qdrant(
         self,
-        doc: OfficialDocument,
+        doc_id: str,
+        doc_url: str,
+        doc_title: str,
         toc: list[TocNode],
     ) -> list[Citation]:
-        """Build citations from Qdrant chunks, falling back to summary if unavailable.
-
-        Groups chunks by section_path, merges with overlap handling,
-        creates one Citation per section.
-        """
+        """Build citations from Qdrant chunks, falling back to title if unavailable."""
         qdrant = self._qdrant_lazy
         if qdrant is not None:
             try:
-                chunks = await qdrant.get_chunks_by_document_id(doc.id)
+                chunks = await qdrant.get_chunks_by_document_id(doc_id)
                 if chunks:
-                    return self._merge_chunks_to_citations(chunks, doc)
+                    return self._merge_chunks_to_citations(chunks, doc_id, doc_url)
             except Exception as exc:
-                with self.tracer.trace("detail.qdrant_error") as span:
-                    span.set_input({"document_id": doc.id})
-                    span.set_error(exc)
+                logger.warning("Qdrant error building citations for %s: %s", doc_id, exc)
 
-        # Fallback: one citation from summary / title
+        # Fallback: one citation from title
         return [
             Citation(
-                text=doc.summary or doc.title,
-                source_id=doc.id,
-                url=doc.url,
+                text=doc_title or doc_id,
+                source_id=doc_id,
+                url=doc_url or "",
                 section=[toc[0].title] if toc else None,
             ),
         ]
@@ -389,20 +353,12 @@ class ODLService(ODLServiceProtocol):
     @staticmethod
     def _merge_chunks_to_citations(
         chunks: list[DocumentChunk],
-        doc: OfficialDocument,
+        doc_id: str,
+        doc_url: str,
     ) -> list[Citation]:
-        """Merge chunks grouped by section_path into one Citation per section.
-
-        Chunks are already sorted by (section_path, section_chunk_index)
-        from QdrantStore.get_chunks_by_document_id.
-
-        Overlap handling: for consecutive chunks in the same section,
-        detects suffix/prefix overlap and trims the duplicate portion
-        before concatenation.
-        """
+        """Merge chunks grouped by section_path into one Citation per section."""
         citations: list[Citation] = []
 
-        # Group by section_path (preserving original order)
         grouped: dict[str, list[DocumentChunk]] = {}
         group_order: list[str] = []
         for chunk in chunks:
@@ -420,8 +376,8 @@ class ODLService(ODLServiceProtocol):
             citations.append(
                 Citation(
                     text=merged,
-                    source_id=doc.id,
-                    url=doc.url,
+                    source_id=doc_id,
+                    url=doc_url,
                     section=section,
                 )
             )
@@ -472,21 +428,21 @@ class ODLService(ODLServiceProtocol):
         parent_id: str | None = None,
         query: str = "",
     ) -> list[TopicNode]:
-        """Просмотр рубрикатора — делегирует первому адаптеру."""
+        """Просмотр рубрикатора из PostgreSQL."""
         with self.tracer.trace("list_topics", parent_id=str(parent_id)) as span:
             span.set_input({"parent_id": parent_id, "query": query})
-            all_topics: list[TopicNode] = []
-            for adapter in self._adapters:
-                try:
-                    topics = await adapter.list_topics(parent_id=parent_id, query=query)
-                    all_topics.extend(topics)
-                except Exception:
-                    logger.exception(
-                        "Adapter %s failed during list_topics — skipping",
-                        adapter.source_id,
-                    )
-            span.set_output({"count": len(all_topics)})
-            return all_topics
+            ref_repo = self._ref_repo_lazy
+            if ref_repo is None:
+                span.set_output({"count": 0, "reason": "no_database"})
+                return []
+            try:
+                topics = await ref_repo.list_topics(parent_id=parent_id, query=query)
+                span.set_output({"count": len(topics)})
+                return topics
+            except Exception:
+                logger.exception("Failed to list topics")
+                span.set_output({"count": 0, "error": "db_error"})
+                return []
 
     async def get_toc(
         self,
@@ -494,7 +450,7 @@ class ODLService(ODLServiceProtocol):
         parent_section_id: str | None = None,
         query: str = "",
     ) -> list[TocNode]:
-        """Оглавление документа — делегирует адаптеру по source_id."""
+        """Оглавление документа из PostgreSQL."""
         with self.tracer.trace("get_toc", document_id=document_id) as span:
             span.set_input(
                 {
@@ -503,14 +459,21 @@ class ODLService(ODLServiceProtocol):
                     "query": query,
                 }
             )
-            adapter = self._get_adapter(document_id)
-            result = await adapter.get_toc(
-                document_id=document_id,
-                parent_section_id=parent_section_id,
-                query=query,
-            )
-            span.set_output({"count": len(result)})
-            return result
+            section_repo = self._section_repo_lazy
+            if section_repo is None:
+                span.set_output({"count": 0, "reason": "no_database"})
+                return []
+            try:
+                result = await section_repo.get_toc(
+                    document_uuid=document_id,
+                    parent_section_id=parent_section_id,
+                )
+                span.set_output({"count": len(result)})
+                return result
+            except Exception:
+                logger.exception("Failed to get TOC for document %s", document_id)
+                span.set_output({"count": 0, "error": "db_error"})
+                return []
 
 
 __all__ = [

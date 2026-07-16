@@ -15,9 +15,8 @@ from typing import cast
 import uvicorn
 from dotenv import load_dotenv
 
-from adapters.base.source_adapter import SourceAdapter
 from core.api.app_config import get_config
-from core.api.config import ConfigError, ServerConfig, instantiate_adapter
+from core.api.config import ConfigError, ServerConfig
 from core.api.mcp_server import create_mcp_server
 from core.api.rest_server import create_app
 from core.cache import CacheClient
@@ -131,15 +130,8 @@ def main() -> None:
         span.set_input({"host": config.api_host, "port": config.api_port})
         span.set_output({"status": "started"})
 
-    # Create adapters from config → service → servers
-    adapters: list[SourceAdapter] = [
-        cast(SourceAdapter, instantiate_adapter(*adapter_path.rsplit(":", 1)))
-        for adapter_path in config.adapters
-    ]
-    logger.info(
-        "Loaded adapters: %s",
-        [a.source_id for a in adapters],
-    )
+    # Note: SourceAdapter'ы загружаются только в Ingest Worker (отдельный процесс/CLI).
+    # ODLService не зависит от адаптеров — поиск работает через Metadata Routing.
 
     # Create cache client (lazy — no connection attempt until first use)
     app_config = get_config()
@@ -183,7 +175,7 @@ def main() -> None:
     )
 
     service = ODLService(
-        adapters=adapters, cache=cache, db=db, qdrant=qdrant_store, embedder=embedder
+        cache=cache, db=db, qdrant=qdrant_store, embedder=embedder
     )
 
     # Create FastAPI app (REST) with cache and db for health check
