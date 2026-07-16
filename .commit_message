@@ -1,9 +1,0 @@
-fix: test failures — URL persistence, doc_uuid UUID, QdrantTopic test, admin rubric removal
-
-- document_repo: store doc.url in meta JSONB, read from meta with source_url fallback
-- StubIngestHandler: use direct SQL SELECT id FROM document for doc_uuid (not db_doc.id)
-- ProductionIngestHandler._get_doc_uuid: same fix
-- test_qdrant_store: update upsert_topic test — point.id is now UUID v5, check payload.external_id
-- test_rest_server: replace rubric=3 with section_topic=3 in admin test
-- yandex_vision: exponential backoff on 429 (2, 4, 8s)
-- StubGetContentHandler: Tesseract fallback after Yandex Vision retries exhausted
