@@ -117,4 +117,12 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="v001-010" author="kilo-code">
+        <comment>Create section_topic junction table (M:N between document_section and topic)</comment>
+        <sqlFile path="010_create_section_topic.sql" relativeToChangelogFile="true"/>
+        <rollback>
+            DROP TABLE IF EXISTS section_topic CASCADE;
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

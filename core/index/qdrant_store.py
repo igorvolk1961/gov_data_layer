@@ -615,6 +615,47 @@ class QdrantStore:
         result = client.count(collection_name="topics")
         return result.count  # type: ignore[no-any-return]
 
+    async def search_topics(
+        self,
+        query_embedding: list[float],
+        limit: int = 5,
+        score_threshold: float = 0.2,
+    ) -> list[dict[str, Any]]:
+        """Search the 'topics' collection by semantic similarity.
+
+        Args:
+            query_embedding: Text embedding vector to search with.
+            limit: Maximum number of results.
+            score_threshold: Minimum cosine similarity score (0.0-1.0).
+
+        Returns:
+            List of dicts with keys: topic_id (external), topic_uuid, name, score.
+        """
+        client = await self._get_client()
+        if client is None:
+            return []
+        await self.ensure_topic_collection()
+
+        hits = client.query_points(
+            collection_name="topics",
+            query=query_embedding,
+            limit=limit,
+            score_threshold=score_threshold,
+        ).points
+
+        results: list[dict[str, Any]] = []
+        for hit in hits:
+            payload = hit.payload or {}
+            results.append(
+                {
+                    "topic_id": payload.get("topic_id", ""),
+                    "topic_uuid": str(hit.id),
+                    "name": payload.get("name", ""),
+                    "score": hit.score,
+                }
+            )
+        return results
+
     async def delete_all_collections(self) -> None:
         """Delete both 'documents' and 'topics' collections (full cleanup)."""
         client = await self._get_client()

@@ -30,6 +30,7 @@ class ReferenceCounts(BaseModel):
     topic: int = 0
     document: int = 0
     document_section: int = 0
+    section_topic: int = 0
 
 
 class QdrantCollectionInfo(BaseModel):

@@ -14,7 +14,11 @@ run in thread pool executors to avoid blocking the event loop.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import contextlib
+import logging
+from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from core.analyzer.section_analyzer import SectionFact
@@ -36,6 +40,7 @@ async def process_document_text(
     section_uuids: dict[str, str] | None = None,
     region: str | None = None,
     region_id: str | None = None,
+    parent_span: Any = None,
 ) -> tuple[list[DocumentChunk], list[TocNode]]:
     """Process document text: chunk -> persist sections -> embed -> Qdrant.
 
@@ -67,7 +72,7 @@ async def process_document_text(
     from core.ingest.chunker import DocStructSplitter as _Chunker
     from core.ingest.embedder import Embedder as _Embedder
 
-    # Tracing
+    # Tracing — create ONE parent span for the entire pipeline
     try:
         from core.observability import get_tracer
 
@@ -75,25 +80,44 @@ async def process_document_text(
     except Exception:
         tracer = None
 
-    with tracer.trace("pipeline.process_document_text") if tracer else _null_context():
+    # When parent_span is provided, we reuse it as the parent for child spans
+    # but do NOT enter its context manager again (it's already active in caller).
+    # When parent_span is None, create a new root span for this pipeline call.
+    if parent_span is not None:
+        pipeline_span = parent_span
+    else:
+        pipeline_span = tracer.trace("pipeline.process_document_text") if tracer else _NullSpan()
+
+    # Define a helper so child spans are clean
+    def _child(name: str) -> Any:
+        return tracer.span(name, parent=pipeline_span) if tracer else _NullSpan()
+
+    if parent_span is None:
+        # Only manage context when we created the root span
+        ctx = pipeline_span
+    else:
+        ctx = contextlib.nullcontext()
+
+    with ctx:
         chunker = chunker or _Chunker()
         embedder = embedder or _Embedder()
         qdrant = qdrant or _QdrantStore()
 
         if not text:
-            with tracer.trace("pipeline.skip_empty") if tracer else _null_context():
+            child = _child("pipeline.skip_empty")
+            with child:
                 pass  # empty text — skip
             return [], []
 
-        # 1. Chunk + TOC (один парсинг!)
-        with tracer.trace("pipeline.chunk") if tracer else _null_context():
+        # 1. Chunk + TOC
+        child = _child("pipeline.chunk")
+        with child:
             chunks, toc = await chunker.split_text(text, document_id, doc_uuid, section_uuids)
             if not chunks:
-                span = _NullSpan() if tracer is None else tracer.trace("pipeline.no_chunks")
-                with span:
-                    span.set_input({"document_id": document_id})
+                child = _child("pipeline.no_chunks")
+                with child:
+                    child.set_input({"document_id": document_id})
                 return [], toc
-            # Propagate region metadata to each chunk
             if region is not None or region_id is not None:
                 for chunk in chunks:
                     if region is not None:
@@ -101,30 +125,36 @@ async def process_document_text(
                     if region_id is not None:
                         chunk.region_id = region_id
 
-        # 2. Persist sections to PostgreSQL (if repo is available and not already persisted)
+        # 2. Persist sections to PostgreSQL
         resolved_section_uuids = section_uuids
         if resolved_section_uuids is None and section_repo is not None and toc and doc_uuid:
-            span = _NullSpan() if tracer is None else tracer.trace("pipeline.persist_sections")
-            with span:
-                span.set_input({"doc_uuid": doc_uuid, "section_count": len(toc)})
+            child = _child("pipeline.persist_sections")
+            with child:
+                child.set_input({"doc_uuid": doc_uuid, "section_count": len(toc)})
                 try:
                     resolved_section_uuids = await section_repo.upsert_sections(doc_uuid, toc)
-                    span.set_output({"section_uuids_count": len(resolved_section_uuids)})
-                    # Set section_uuids on each chunk using the mapping
+                    child.set_output({"section_uuids_count": len(resolved_section_uuids)})
                     for chunk in chunks:
                         chunk.section_uuids = [
                             resolved_section_uuids.get(eid, "")
                             for eid in chunk.section_external_ids
                         ]
                 except Exception as exc:
-                    span.set_error(exc)
-                    span.set_output({"error": str(exc)[:200]})
-                    # Non-fatal — chunks without section_uuids still work
+                    child.set_error(exc)
+                    child.set_output({"error": str(exc)[:200]})
+                    import traceback as _tb
 
-        # 3. Semantic analysis + persistence of legal facts (stub, DB only)
+                    logger.error(
+                        "Section persistence failed for doc %s: %s\n%s",
+                        doc_uuid,
+                        exc,
+                        _tb.format_exc(),
+                    )
+
+        # 3. Semantic analysis + persistence of legal facts
         if resolved_section_uuids and doc_uuid and section_repo is not None:
-            span = _NullSpan() if tracer is None else tracer.trace("pipeline.analyze_sections")
-            with span:
+            child = _child("pipeline.analyze_sections")
+            with child:
                 try:
                     from core.analyzer import SectionAnalyzer
                     from core.persistence.repository import ChangeTrackingRepository
@@ -142,8 +172,7 @@ async def process_document_text(
                         await ct_repo.save_analysis_facts(
                             all_facts, doc_uuid, resolved_section_uuids
                         )
-                        span.set_output({"facts_saved": len(all_facts)})
-                        # Deactivate affected sections in Qdrant
+                        child.set_output({"facts_saved": len(all_facts)})
                         if qdrant is not None:
                             from datetime import date as _date
 
@@ -151,7 +180,6 @@ async def process_document_text(
                             effective_date: _date | None = None
                             for fact in all_facts:
                                 if fact.target_document_id:
-                                    # For REVOKE: get sections of target doc
                                     try:
                                         target_sections = await section_repo.get_sections(
                                             fact.target_document_id
@@ -163,7 +191,6 @@ async def process_document_text(
                                                 )
                                     except Exception:
                                         pass
-                                # Use current doc's valid_from as default effective_date
                                 if effective_date is None and fact.effective_date:
                                     effective_date = fact.effective_date
                             if affected_uuids:
@@ -171,20 +198,22 @@ async def process_document_text(
                                     affected_uuids,
                                     effective_date or _date.today(),
                                 )
-                                span.set_output({"deactivated_chunks": deactivated})
+                                child.set_output({"deactivated_chunks": deactivated})
                 except Exception as exc:
-                    span.set_error(exc)
-                    span.set_output({"error": str(exc)[:200]})
+                    child.set_error(exc)
+                    child.set_output({"error": str(exc)[:200]})
 
-        # 5. Embed
-        with tracer.trace("pipeline.embed") if tracer else _null_context():
+        # 4. Embed
+        child = _child("pipeline.embed")
+        with child:
             texts = [c.text for c in chunks]
             embeddings = await embedder.embed(texts)
             for chunk, emb in zip(chunks, embeddings, strict=True):
                 chunk.embedding = emb
 
-        # 6. Store in Qdrant
-        with tracer.trace("pipeline.qdrant_upsert") if tracer else _null_context():
+        # 5. Store in Qdrant
+        child = _child("pipeline.qdrant_upsert")
+        with child:
             await qdrant.upsert_chunks(chunks)
 
         return chunks, toc
@@ -223,6 +252,112 @@ def _null_context() -> _NullContext:
     return _NullContext()
 
 
+async def link_sections_to_topics(
+    chunks: list[DocumentChunk],
+    resolved_section_uuids: dict[str, str],
+    embedder: Embedder | None = None,
+    qdrant: QdrantStore | None = None,
+    section_topic_repo: Any = None,
+    max_topics_per_section: int = 3,
+    score_threshold: float = 0.25,
+    tracer: Any = None,
+    parent_span: Any = None,
+) -> int:
+    """Link document sections to semantically similar topics (rubrics).
+
+    For each section with a UUID, embed its text, query Qdrant ``topics``
+    collection, and insert matching topics into the ``section_topic`` table.
+
+    Args:
+        chunks: List of DocumentChunk from the pipeline.
+        resolved_section_uuids: Dict mapping external_id -> section UUID.
+        embedder: Embedder instance (lazy-init if None).
+        qdrant: QdrantStore instance (lazy-init if None).
+        section_topic_repo: SectionTopicRepository instance.
+        max_topics_per_section: Max topics to link per section.
+        score_threshold: Minimum similarity score.
+
+    Returns:
+        Total number of section-topic links created.
+    """
+    if not resolved_section_uuids or not chunks or section_topic_repo is None:
+        return 0
+
+    # Lazy init (same pattern as process_document_text)
+    if embedder is None:
+        from core.ingest.embedder import Embedder as _Embedder
+        embedder = _Embedder()
+    if qdrant is None:
+        from core.index.qdrant_store import QdrantStore as _QdrantStore
+        qdrant = _QdrantStore()
+
+    # Build a map: section_uuid -> concatenated text from all chunks sharing that section
+    section_texts: dict[str, list[str]] = {}
+    for chunk in chunks:
+        for sec_uuid in chunk.section_uuids:
+            if sec_uuid:
+                section_texts.setdefault(sec_uuid, []).append(chunk.text)
+
+    if not section_texts:
+        return 0
+
+    # Get tracer
+    _link_tracer: Any = tracer
+    if _link_tracer is None:
+        try:
+            from core.observability import get_tracer as _gt
+
+            _link_tracer = _gt()
+        except Exception:
+            _link_tracer = None
+
+    def _link_child(name: str) -> Any:
+        if _link_tracer is not None and hasattr(_link_tracer, "span"):
+            return _link_tracer.span(name, parent=parent_span)
+        return _NullSpan()
+
+    total_links = 0
+
+    for sec_uuid, texts in section_texts.items():
+        full_text = " ".join(texts)[:2000]  # limit to 2000 chars
+        if not full_text.strip():
+            continue
+
+        child = _link_child("pipeline.link_topics")
+        with child:
+            child.set_input({"section_uuid": sec_uuid[:8], "text_len": len(full_text)})
+            try:
+                # 1. Embed section text
+                emb = await embedder.embed([full_text])
+                if not emb or not emb[0]:
+                    continue
+
+                # 2. Search Qdrant topics by similarity
+                matches = await qdrant.search_topics(
+                    query_embedding=emb[0],
+                    limit=max_topics_per_section,
+                    score_threshold=score_threshold,
+                )
+
+                # 3. Link to topics via SectionTopicRepository
+                links = [
+                    {"section_id": sec_uuid, "topic_id": m["topic_uuid"], "score": m["score"]}
+                    for m in matches
+                ]
+                if links:
+                    await section_topic_repo.batch_link(links)
+                    total_links += len(links)
+                    child.set_output(
+                        {"links_created": len(links), "topics": [m["name"] for m in matches]}
+                    )
+            except Exception as exc:
+                child.set_error(exc)
+                child.set_output({"error": str(exc)[:200]})
+
+    return total_links
+
+
 __all__ = [
+    "link_sections_to_topics",
     "process_document_text",
 ]

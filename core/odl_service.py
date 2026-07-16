@@ -683,6 +683,7 @@ class ODLService(ODLServiceProtocol):
                 ("topic", "topic"),
                 ("document", "document"),
                 ("document_section", "document_section"),
+                ("section_topic", "section_topic"),
             ]
             for attr, table in tables:
                 row = await self._db.fetchval(f"SELECT COUNT(*) FROM {table}")

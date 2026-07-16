@@ -6,10 +6,12 @@ from core.persistence.repository.change_tracking_repo import ChangeTrackingRepos
 from core.persistence.repository.document_repo import DocumentRepository
 from core.persistence.repository.reference_repo import ReferenceRepository
 from core.persistence.repository.section_repo import SectionRepository
+from core.persistence.repository.section_topic_repo import SectionTopicRepository
 
 __all__ = [
     "ChangeTrackingRepository",
     "DocumentRepository",
     "ReferenceRepository",
     "SectionRepository",
+    "SectionTopicRepository",
 ]

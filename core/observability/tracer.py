@@ -131,6 +131,20 @@ class _Span:
         if self._write_callback:
             with contextlib.suppress(Exception):
                 self._write_callback(self._data)
+        # Also print to console for real-time visibility
+        short = f"[{self._data.level}] {self._data.name}"
+        if self._data.trace_id:
+            short += f" (trace:{self._data.trace_id[:8]}"
+            if self._data.parent_span_id:
+                short += f" parent:{self._data.parent_span_id[:8]}"
+            short += ")"
+        if self._data.error:
+            short += f" ERROR: {self._data.error[:100]}"
+        if self._data.output:
+            short += f" -> {self._data.output}"
+        if self._data.input:
+            short += f" <- {self._data.input}"
+        print(short)
 
 
 # ──────────────────────────────────────────────
