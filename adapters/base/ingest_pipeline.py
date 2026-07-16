@@ -299,14 +299,13 @@ async def link_sections_to_topics(
         return 0
 
     # Get tracer
-    _link_tracer: Any = tracer
-    if _link_tracer is None:
-        try:
-            from core.observability import get_tracer as _gt
+    _link_tracer: Any = None
+    try:
+        from core.observability import get_tracer as _gt
 
-            _link_tracer = _gt()
-        except Exception:
-            _link_tracer = None
+        _link_tracer = _gt()
+    except Exception:
+        _link_tracer = None
 
     def _link_child(name: str) -> Any:
         if _link_tracer is not None and hasattr(_link_tracer, "span"):
