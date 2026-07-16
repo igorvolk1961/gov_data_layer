@@ -33,7 +33,7 @@ FIXTURES_DIR = Path("fixtures")
 PUBLISH_IDS = ["0001202012230060"]  # Demo: 1 document (all rubrics load)
 
 
-async def main():
+async def main() -> None:
     configure_observability()
     cfg = get_config()
 
@@ -136,6 +136,7 @@ async def main():
 
             # Step 2b: Get OCR text + pipeline in one trace
             from core.observability import get_tracer
+
             proc_tracer = get_tracer()
             with proc_tracer.trace("pravo.get_content") as content_span:
                 print("  OCR via Yandex Vision...")
@@ -161,8 +162,11 @@ async def main():
 
                 section_repo = SectionRepository(db) if db else None
                 chunks, toc = await process_document_text(
-                    text, document_id, doc_uuid,
-                    embedder=embedder, qdrant=qdrant,
+                    text,
+                    document_id,
+                    doc_uuid,
+                    embedder=embedder,
+                    qdrant=qdrant,
                     section_repo=section_repo,
                     parent_span=content_span,
                 )
@@ -173,7 +177,8 @@ async def main():
                     st_repo = SectionTopicRepository(db)
                     links = await link_sections_to_topics(
                         chunks,
-                        embedder=embedder, qdrant=qdrant,
+                        embedder=embedder,
+                        qdrant=qdrant,
                         section_topic_repo=st_repo,
                         parent_span=content_span,
                     )

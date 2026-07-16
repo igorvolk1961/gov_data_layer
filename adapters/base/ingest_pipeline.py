@@ -279,9 +279,11 @@ async def link_sections_to_topics(
     # Lazy init (same pattern as process_document_text)
     if embedder is None:
         from core.ingest.embedder import Embedder as _Embedder
+
         embedder = _Embedder()
     if qdrant is None:
         from core.index.qdrant_store import QdrantStore as _QdrantStore
+
         qdrant = _QdrantStore()
 
     # Build a map: section_uuid -> concatenated text from all chunks sharing that section
