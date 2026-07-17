@@ -66,6 +66,11 @@ def _add_tracing_middleware(app: FastAPI) -> None:
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        # Skip tracing for SSE/MCP endpoint — SSE streaming is not compatible
+        # with BaseHTTPMiddleware body streaming wrapper.
+        if request.url.path.startswith("/mcp"):
+            return await call_next(request)
+
         trace_name = f"{request.method} {request.url.path}"
         with tracer.trace(trace_name, method=request.method, path=request.url.path) as span:
             span.set_input(
