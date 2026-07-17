@@ -1,1 +1,0 @@
-<class 'qdrant_client.http.models.models.FieldCondition'>

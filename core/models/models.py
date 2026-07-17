@@ -256,6 +256,16 @@ class SearchContext(BaseModel):
         "Агент начинает с offset=0, затем использует offset += max_results "
         "для получения следующей страницы, пока offset < total_count",
     )
+    score_threshold: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Минимальный порог релевантности (cosine similarity). "
+        "Задаётся агентом (политика). Результаты ниже порога отбрасываются. "
+        "None = не фильтровать (честный сигнал — слой возвращает все результаты, "
+        "агент сам решает, какой порог acceptable). "
+        "Пример: 0.5 — только результаты с score >= 0.5",
+    )
 
 
 class SearchResult(BaseModel):

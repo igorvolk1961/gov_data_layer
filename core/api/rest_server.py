@@ -36,6 +36,14 @@ class SearchRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=100, description="Max results to return")
     region: str | None = Field(default=None, description="Region filter")
     topic: str | None = Field(default=None, description="Topic filter")
+    score_threshold: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Minimum relevance score threshold (cosine similarity). "
+        "Results below this threshold are excluded. "
+        "None = no filtering (agent decides policy).",
+    )
 
 
 if TYPE_CHECKING:
@@ -150,6 +158,7 @@ def create_app(
                 max_results=body.limit,
                 region=body.region,
                 topic=body.topic,
+                score_threshold=body.score_threshold,
             )
             response = await service.search_documents(body.query, context)
             return JSONResponse(

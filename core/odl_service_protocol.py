@@ -8,7 +8,7 @@ MCP-сервер и REST-сервер работают через этот Proto
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -69,12 +69,14 @@ class ODLServiceProtocol(Protocol):
         self,
         query: str,
         context: SearchContext | None = None,
+        parent_span: Any = None,
     ) -> SearchResponse:
         """Поиск документов по запросу.
 
         Args:
             query: Свободный текст вопроса/интент пользователя.
             context: Опциональные параметры фильтрации (регион, тема и т.д.).
+            parent_span: Родительский span для построения иерархии трейсов.
 
         Returns:
             SearchResponse с результатами поиска и мета-информацией для пагинации.

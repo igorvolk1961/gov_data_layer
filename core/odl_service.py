@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from core.cache import CacheClient
 from core.errors import NotFoundError
@@ -218,6 +220,7 @@ class ODLService(ODLServiceProtocol):
         self,
         query: str,
         context: SearchContext | None = None,
+        parent_span: Any = None,
     ) -> SearchResponse:
         """Поиск документов через Qdrant с обогащением из PostgreSQL.
 
@@ -227,6 +230,16 @@ class ODLService(ODLServiceProtocol):
 
         Результаты кэшируются в Redis на 5 минут (cache-aside).
         При недоступности Redis запрос проходит напрямую в Qdrant.
+
+        Args:
+            query: Текст поискового запроса.
+            context: Опциональные параметры фильтрации.
+            parent_span: Родительский span для иерархии трейсов.
+                        Если передан — поиск создаёт дочерние span'ы.
+                        Если None — создаётся корневой trace.
+
+        Returns:
+            SearchResponse с результатами поиска.
         """
         ctx = context or SearchContext()
         offset = ctx.offset
@@ -240,15 +253,26 @@ class ODLService(ODLServiceProtocol):
                 if cached is not None:
                     return SearchResponse.model_validate_json(cached)
             except Exception:
-                logger.warning("Cache lookup failed for search — falling through", exc_info=True)
+                # Cache error — just log via tracer below
+                pass
 
         results: list[SearchResult] = []
 
-        with self.tracer.trace("search_documents", query=query[:100]) as span:
-            span.set_input(ctx.model_dump(mode="json"))
+        # Determine the root span for this search operation
+        search_span: Any = parent_span
+        ctx_mgr: Any = contextlib.nullcontext()
+        if parent_span is None:
+            search_span = self.tracer.trace("search_documents", query=query[:100])
+            ctx_mgr = search_span
+
+        def _child(name: str, **tags: str) -> Any:
+            return self.tracer.span(name, parent=search_span, **tags)
+
+        with ctx_mgr:
+            search_span.set_input(ctx.model_dump(mode="json"))
 
             if self._qdrant is None:
-                span.set_output({"total_count": 0, "reason": "qdrant_not_configured"})
+                search_span.set_output({"total_count": 0, "reason": "qdrant_not_configured"})
                 return SearchResponse(results=[], total_count=0, offset=offset)
 
             # Resolve region text to region_id for Qdrant filtering
@@ -266,7 +290,8 @@ class ODLService(ODLServiceProtocol):
                 embedder = self._embedder_lazy
                 query_vector = await embedder.embed_query(query)
 
-                with self.tracer.trace("search.qdrant") as qspan:
+                qspan = _child("search.qdrant")
+                with qspan:
                     qdrant_chunks = await self._qdrant.search(
                         query_embedding=query_vector,
                         limit=max_results + offset,
@@ -274,54 +299,110 @@ class ODLService(ODLServiceProtocol):
                     )
                     qspan.set_output({"hits": len(qdrant_chunks)})
 
-                page_chunks = qdrant_chunks[offset : offset + max_results]
+                # Page chunks for current page
+                page_chunks = list(qdrant_chunks[offset : offset + max_results])
+
+                # Группируем чанки по document_id — один результат = один документ
+                # Для каждого документа храним (лучший score, лучший snippet, все section_path)
+                doc_buckets: dict[str, list[tuple[DocumentChunk, float]]] = {}
+                for chunk, score in page_chunks:
+                    doc_buckets.setdefault(chunk.document_id, []).append((chunk, score))
 
                 # Обогащение из PostgreSQL
                 doc_repo = self._doc_repo_lazy
 
-                for chunk, score in page_chunks:
+                for doc_id, chunk_list in doc_buckets.items():
+                    # Best chunk: highest score
+                    best_chunk, best_score = max(chunk_list, key=lambda x: x[1])
+
+                    # Score threshold — политика агента (механизм/политика)
+                    if ctx.score_threshold is not None and best_score < ctx.score_threshold:
+                        continue
+
+                    # Строим title из метаданных документа
                     url = ""
                     source_name = ""
-                    doc_title = chunk.text[:120] + ("…" if len(chunk.text) > 120 else "")
+                    jurisdiction: str | None = None
+                    region: str | None = None
+                    topic_list: list[str] = []
+                    organization_list: list[str] = []
+                    document_number: str | None = None
+                    document_type: str | None = None
+                    legal_status_val = LegalStatus.UNKNOWN
+                    data_freshness = best_chunk.data_freshness
+                    doc_title = ""  # будет заполнен из doc_meta.title
 
                     if doc_repo is not None:
-                        with self.tracer.trace("search.pg_lookup") as pspan:
+                        pspan = _child("search.pg_lookup")
+                        with pspan:
                             try:
-                                doc_meta = await doc_repo.get_document_by_id(chunk.document_id)
+                                publish_id = doc_id.split("-", 1)[1] if "-" in doc_id else doc_id
+                                doc_meta = await doc_repo.get_document_by_publish_id(publish_id)
                                 if doc_meta is not None:
+                                    # Clean HTML from title
+                                    raw_title = doc_meta.title or ""
+                                    for tag in ["<br/>", "<br />", "<br>", "</br>"]:
+                                        raw_title = raw_title.replace(tag, " ")
+                                    doc_title = " ".join(raw_title.split())
                                     url = doc_meta.url or ""
                                     source_name = doc_meta.source.name if doc_meta.source else ""
-                                    doc_title = doc_meta.title or doc_title
-                                    pspan.set_output({"found": True})
+                                    jurisdiction = doc_meta.jurisdiction
+                                    region = doc_meta.region
+                                    topic_list = doc_meta.topic or []
+                                    organization_list = (
+                                        [doc_meta.organization] if doc_meta.organization else []
+                                    )
+                                    document_number = doc_meta.document_number
+                                    document_type = doc_meta.document_type
+                                    legal_status_val = doc_meta.legal_status
+                                    data_freshness = doc_meta.valid_from or doc_meta.created_at
+                                    pspan.set_output({"found": True, "source": source_name})
                                 else:
                                     pspan.set_output({"found": False})
-                            except Exception:
+                            except Exception as exc:
+                                pspan.set_error(exc)
                                 pspan.set_output({"found": False})
 
+                    # Если title не найден — используем заголовок из чанка
+                    if not doc_title:
+                        doc_title = best_chunk.text[:120] + (
+                            "…" if len(best_chunk.text) > 120 else ""
+                        )
+
+                    # Сниппет — текст лучшего чанка
+                    snippet = best_chunk.text[:300] + ("…" if len(best_chunk.text) > 300 else "")
+
                     result = SearchResult(
-                        id=chunk.document_id,
+                        id=doc_id,
                         title=doc_title,
-                        snippet=chunk.text[:300] + ("…" if len(chunk.text) > 300 else ""),
+                        snippet=snippet,
                         url=url,
                         source_name=source_name,
+                        jurisdiction=jurisdiction,
+                        region=region,
+                        topic=topic_list,
+                        organization=organization_list,
                         created_at=datetime.now(timezone.utc),
-                        legal_status=LegalStatus.UNKNOWN,
+                        legal_status=legal_status_val,
+                        document_number=document_number,
+                        document_type=document_type,
                         confidence=ConfidenceSignals(
-                            retrieval_relevance=score,
-                            data_freshness=chunk.data_freshness,
+                            retrieval_relevance=best_score,
+                            data_freshness=data_freshness,
                             source_availability=SourceAvailability.AVAILABLE,
                         ),
                     )
                     results.append(result)
 
             except Exception as exc:
-                with self.tracer.trace("search.qdrant_error") as espan:
+                espan = _child("search.qdrant_error")
+                with espan:
                     espan.set_error(exc)
                     espan.set_output({"error": str(exc)[:200]})
 
             response = SearchResponse(
                 results=results,
-                total_count=len(results),
+                total_count=len(results),  # уникальные документы (1 документ = 1 результат)
                 offset=offset,
                 missing_context=missing_context,
                 suggested_clarification_prompt=suggested_clarification,
@@ -336,9 +417,12 @@ class ODLService(ODLServiceProtocol):
                         ttl=timedelta(minutes=5),
                     )
                 except Exception:
-                    logger.warning("Failed to cache search result", exc_info=True)
+                    # Cache write error — non-critical, just note via tracer
+                    err_span = _child("search.cache_write_error")
+                    with err_span:
+                        err_span.set_output({"error": "failed to cache search result"})
 
-            span.set_output({"total_count": response.total_count})
+            search_span.set_output({"total_count": response.total_count})
             return response
 
     async def get_document_detail(
