@@ -415,7 +415,7 @@ field_confidence: dict[str, float] | None = None
 
 ---
 
-## 9. Переименование MCP-инструментов: get_source → get_document_detail, search_official_sources → search_documents
+## 10. Переименование MCP-инструментов: get_source → get_document_detail, search_official_sources → search_documents
 
 **Дата:** 2026-07-10
 
@@ -498,7 +498,7 @@ field_confidence: dict[str, float] | None = None
 
 ---
 
-## 9. Dual API: MCP + OpenAPI
+## 11. Dual API: MCP + OpenAPI
 
 **Дата:** 2026-07-10
 
@@ -551,7 +551,7 @@ flowchart TB
 
 ---
 
-## 10. OCRProvider: абстракция для сменяемого OCR
+## 12. OCRProvider: абстракция для сменяемого OCR
 
 **Дата:** 2026-07-12
 
@@ -593,7 +593,7 @@ class OCRProvider(Protocol):
 
 ---
 
-## 11. RSSAdapter: общее решение для RSS-источников
+## 13. RSSAdapter: общее решение для RSS-источников
 
 **Дата:** 2026-07-12
 
@@ -633,7 +633,7 @@ class RSSAdapter:
 
 ---
 
-## 12. OfficialDocument.meta: source-специфичные атрибуты
+## 14. OfficialDocument.meta: source-специфичные атрибуты
 
 **Дата:** 2026-07-12
 
@@ -678,7 +678,7 @@ class OfficialDocument(BaseModel):
 
 ---
 
-## 13. DocStructSplitter: чанкинг по структуре документа
+## 15. DocStructSplitter: чанкинг по структуре документа
 
 **Дата:** 2026-07-12
 
@@ -720,7 +720,7 @@ class DocStructSplitter:
 
 ---
 
-## 14. paraphrase-multilingual-MiniLM: выбор модели эмбеддингов
+## 16. paraphrase-multilingual-MiniLM: выбор модели эмбеддингов
 
 **Дата:** 2026-07-12
 
@@ -749,14 +749,14 @@ class DocStructSplitter:
 
 | Модель                         | Качество | Скорость | Размер | Вердикт |
 |--------------------------------|----------|----------|--------|---------|
-| bge-m3                         | Высокое | Низкая | 2.2 GB | Выбрана |
+| paraphrase-multilingual-MiniLM | Низкое | Высокая | 470 MB | Выбрана для PoC |
+| bge-m3                         | Высокое | Низкая | 2.2 GB | При наличии GPU |
 | multilingual-e5-base           | Среднее | Средняя | 1.1 GB | Альтернатива |
-| paraphrase-multilingual-MiniLM | Низкое | Высокая | 470 MB | Для высоких нагрузок |
 | GigaEmbedder                   | Высокое | Высокая | API | Внешняя зависимость |
 
 ---
 
-## 15. Stub/Production режимы PravoAdapter
+## 17. Stub/Production режимы PravoAdapter
 
 **Дата:** 2026-07-12
 
@@ -797,7 +797,7 @@ class DocStructSplitter:
 
 ---
 
-## 10. ORM не нужен — raw SQL + Repository достаточно
+## 18. ORM не нужен — raw SQL + Repository достаточно
 
 **Дата:** 2026-07-14
 
@@ -856,7 +856,7 @@ ORM **не нужен**. Текущая архитектура (DatabaseClient +
 
 ---
 
-## 16. Persistence-слой: in-process библиотека, а не отдельный контейнер
+## 19. Persistence-слой: in-process библиотека, а не отдельный контейнер
 
 **Дата:** 2026-07-14
 
@@ -909,7 +909,7 @@ flowchart LR
 
 ---
 
-## 17. Обработка отказа БД: fail-fast на старте, graceful degradation в API, Circuit Breaker в инжесте
+## 20. Обработка отказа БД: fail-fast на старте, graceful degradation в API, Circuit Breaker в инжесте
 
 **Дата:** 2026-07-14
 
@@ -1018,7 +1018,7 @@ if self._db is None:
 
 ---
 
-## 18. Metadata Routing вместо Router — адаптеры только для инжеста
+## 21. Metadata Routing вместо Router — адаптеры только для инжеста
 
 **Дата:** 2026-07-16
 
@@ -1097,4 +1097,295 @@ toc = await section_repo.get_toc(doc_uuid)
 - Адаптеры — pure ingest-компоненты, их можно добавлять/удалять без изменения core
 - Metadata Routing даёт гибкость: новый источник не требует кода в core, только настройку инжеста и payload
 - `official_only` удалён из контракта — слой по определению официальный
-- Инжест вынесен из ODLService — может быть отдельным процессом или CLI
+- Инжест вынес из ODLService — может быть отдельным процессом или CLI
+
+---
+
+## 22. CacheClient: lazy connection с трёхсостоянием и graceful degradation
+
+**Дата:** 2026-07-14
+
+### Проблема
+
+Redis может быть недоступен при старте или упасть в рантайме. Нужна стратегия подключения, которая:
+- Не требует Redis на старте (lazy connect)
+- Автоматически переподключается при восстановлении Redis
+- При недоступности — не ломает запрос, а пропускает кэширование
+
+Простая проверка `cache.available` в `/health` — пассивная: флаг `_available` устанавливается в `True` только после первого успешного `ping()`.
+
+### Решение
+
+Использовать трёхсостояние (three-state sentinel pattern) в [`CacheClient`](core/cache/__init__.py:19):
+
+```python
+_UNSET = object()  # не пробовали
+_redis: Redis | None = _UNSET  # None = предыдущая попытка провалилась
+```
+
+Три состояния:
+1. **`_UNSET`** — ни разу не пробовали подключиться → пробуем
+2. **`None`** — предыдущая попытка провалилась → retry
+3. **`Redis` instance** — подключены → используем без пинга
+
+При любой операции (`get`, `set`, `delete`) вызывается `_connect()`, которая:
+- Если `_redis is _UNSET` или `_redis is None` — пытается подключиться
+- При успехе — `_available = True`
+- При ошибке — `_redis = None`, `_available = False`
+- Если `_redis` уже подключён — возвращает его без проверки
+
+### Graceful degradation
+
+При недоступности Redis все операции возвращают `None` / `False`, вызывающий код (`ODLService`) продолжает без кэша. Ошибки логируются.
+
+### Рассмотренные альтернативы
+
+1. **Блокирующий connect на старте** — отклонено: fail-fast на Redis неоправдан, т.к. кэш не критичен
+2. **Connection pool** — отклонено: Redis single-node, pool не даёт выигрыша
+3. **Healthcheck с активным ping** — рекомендовано для `/health`
+
+### Последствия
+
+- Redis не требуется на старте
+- Автоматический retry при восстановлении
+- Graceful degradation: без Redis система работает медленнее, но не падает
+- Health endpoint показывает `unavailable` до первого использования кэша (известная проблема, требуется активный ping в `/health`)
+
+---
+
+## 23. Составной идентификатор документа: source_id-publish_id
+
+**Дата:** 2026-07-14
+
+### Проблема
+
+Документы из разных источников могут иметь пересекающиеся publish_id. Нужен способ однозначно идентифицировать документ в API без дублирования метаданных источника в каждом ответе.
+
+### Решение
+
+Использовать составной формат `{source_id}-{publish_id}`:
+
+```python
+# Формирование в search_documents
+doc_id = f"pravo-0001202012230060"
+
+# Разбор в get_document_detail
+publish_id = source_id.split("-", 1)[1] if "-" in source_id else source_id
+```
+
+- `source_id` — идентификатор источника (например, `pravo`)
+- `publish_id` — номер электронного опубликования из источника
+
+### Рассмотренные альтернативы
+
+1. **Только publish_id** — отклонено: коллизии между источниками
+2. **UUID** — отклонено: неудобно для дебага и ручных запросов
+3. **URL как ID** — отклонено: слишком длинный, неудобен как первичный ключ
+
+### Последствия
+
+- Однозначная идентификация документов между источниками
+- Удобно для отладки: можно скопировать ID из ответа
+- Формат используется во всех API-контрактах
+- Разбор `-` может сломаться, если publish_id содержит дефис
+
+---
+
+## 24. Lambda-архитектура: on-demand persistence как side-effect
+
+**Дата:** 2026-07-15
+
+### Проблема
+
+При получении деталей документа через `get_document_detail()`:
+- Агент получает данные от источника (адаптер) напрямую
+- Документ нужно сохранить в PostgreSQL для последующих запросов
+- Ошибка БД не должна ломать ответ агенту
+
+Блокирующая запись перед ответом увеличивает latency. Асинхронная запись после ответа — риск потери данных при падении сервера.
+
+### Решение
+
+**Lambda-архитектура:** `_persist_document` вызывается как side-effect внутри `get_document_detail()`, но ошибка БД не прерывает ответ:
+
+```python
+async def get_document_detail(self, source_id, ...):
+    # 1. Получаем данные
+    doc = await adapter.get(source_id)
+
+    # 2. Возвращаем агенту + persistence как side-effect
+    try:
+        await self._persist_document(doc, source_id, toc)
+    except Exception:
+        logger.exception("Persistence failed for document %s", source_id)
+        # Не прерываем ответ агента
+```
+
+### Три контекста обработки отказа БД
+
+| Контекст | Стратегия | Механизм |
+|----------|-----------|----------|
+| Старт сервера | Fail-fast | Сервер не стартует без PostgreSQL |
+| API запрос | Graceful degradation | Ошибка логируется, ответ возвращается |
+| Инжест | Circuit Breaker | 3 failures → OPEN, retry через 30s |
+
+### Рассмотренные альтернативы
+
+1. **Блокирующая запись перед ответом** — отклонено: увеличивает latency
+2. **Фоновая очередь** — отложено: избыточно для одного потребителя
+3. **Всегда fail-fast** — отклонено: ошибка БД не должна ломать ответ агенту
+
+### Последствия
+
+- Агент получает ответ без задержки на запись
+- При падении сервера между ответом и записью — потеря данных (приемлемо для кэша)
+- При появлении фонового воркера — перенести persistence туда
+- Fail-fast на старте гарантирует, что misconfiguration не останется незамеченной
+
+---
+
+## 25. Сечение UUID для Qdrant ↔ PostgreSQL
+
+**Дата:** 2026-07-15
+
+### Проблема
+
+Чанки в Qdrant должны ссылаться на соответствующие разделы в PostgreSQL. Без перекрёстных ссылок:
+- Нельзя определить, какие чанки осиротели при удалении раздела
+- Нельзя обновить юридический статус конкретного раздела
+- Нельзя собрать полную цитату с section_path из Qdrant
+
+### Решение
+
+Хранить в каждом [`DocumentChunk`](core/models/models.py:447) два поля для связи с PostgreSQL:
+
+```python
+class DocumentChunk(BaseModel):
+    doc_uuid: str  # UUID документа в PostgreSQL
+    section_external_ids: list[str]  # Внешние ID разделов
+    section_uuids: list[str]  # UUID разделов в PostgreSQL
+```
+
+Маппинг устанавливается на этапе инжеста:
+1. DocStructSplitter возвращает секции и чанки
+2. Секции сохраняются в PostgreSQL → получают UUID
+3. UUID сохраняются в `section_uuids` каждого чанка
+4. Чанки с UUID сохраняются в Qdrant
+
+### Использование
+
+- **Поиск:** Qdrant возвращает чанки → `doc_uuid` → обогащение из PostgreSQL
+- **Деталь документа:** Qdrant возвращает чанки → `section_path` → сборка `Citation.section`
+- **Юридический статус:** `section_uuids` → запрос к `document_section_modification`
+
+### Последствия
+
+- Денормализация: одни и те же UUID хранятся в Qdrant и PostgreSQL
+- При удалении раздела из PG чанки в Qdrant становятся сиротами (нужен garbage collection)
+- Без `section_uuids` — graceful degradation (работает, но без редактирования)
+
+---
+
+## 26. not_actual_since: фильтрация неактуальных чанков
+
+**Дата:** 2026-07-15
+
+### Проблема
+
+При изменении или отмене нормативного акта:
+- Весь документ не перегружается (чанки остаются в Qdrant)
+- Нужно пометить конкретные разделы как неактуальные
+- При поиске неактуальные чанки должны фильтроваться
+
+### Решение
+
+Добавить в [`DocumentChunk`](core/models/models.py:475) поле `not_actual_since: date | None`:
+
+```python
+class DocumentChunk(BaseModel):
+    not_actual_since: date | None = Field(
+        default=None,
+        description="Дата, после которой чанк перестаёт быть актуальным. "
+        "Устанавливается при обработке документа, отменяющего/изменяющего "
+        "раздел, к которому относится чанк.",
+    )
+```
+
+Фильтр при поиске в [`QdrantStore.search()`](core/index/qdrant_store.py):
+```
+not_actual_since IS NULL OR not_actual_since > now()
+```
+
+### Поток изменений
+
+1. Приходит документ об отмене/изменении
+2. Определяются затронутые разделы через `section_uuids`
+3. Qdrant points с соответствующими `section_uuids` получают `not_actual_since = effective_date`
+4. При поиске — фильтр по `not_actual_since`
+
+### Рассмотренные альтернативы
+
+1. **Переинжест всего документа** — отклонено: дорого для больших документов
+2. **Удаление старых чанков** — отклонено: теряется history
+3. **Отдельная коллекция для изменений** — отклонено: усложняет поиск
+
+### Последствия
+
+- Нет необходимости переинжестить весь документ при изменениях
+- Фильтр в Qdrant — `must_not` на неактуальные чанки
+- История изменений сохраняется в чанках
+- Дополнительный payload в Qdrant (одно поле date)
+
+---
+
+## 27. Cache-aside с dual TTL
+
+**Дата:** 2026-07-15
+
+### Проблема
+
+Разные типы данных имеют разную частоту обновлений и criticality:
+- Поисковые запросы — меняются редко, важна скорость
+- Детали документов — меняются очень редко (только при изменении статуса)
+- Рубрикатор и оглавление — статичны после инжеста
+- Регионы — статичны
+
+Единый TTL для всех типов данных приводит к избыточным запросам для статичных данных и устаревшим данным для динамичных.
+
+### Решение
+
+Cache-aside pattern с разными TTL для каждого типа:
+
+```python
+def _cache_key(method: str, *args: str) -> str:
+    raw = "|".join([method, *args])
+    digest = hashlib.sha256(raw.encode()).hexdigest()
+    return f"odl:{method}:{digest}"
+
+# Использование
+cache_key = self._cache_key("search", query, ctx.model_dump_json())
+cached = await self._cache.get(cache_key)
+if cached:
+    return SearchResponse.model_validate_json(cached)
+# ... search ...
+await self._cache.set(cache_key, response.model_dump_json(), ttl=timedelta(minutes=5))
+```
+
+| Метод | TTL | Ключ |
+|-------|-----|------|
+| `search_documents` | 5 минут | `odl:search:{sha256}` |
+| `get_document_detail` | 1 час | `odl:detail:{source_id}` |
+| `list_topics` | 1 час | `odl:topics:{parent_id}:{query}` |
+| `get_toc` | 1 час | `odl:toc:{doc_id}:{parent_id}:{query}` |
+| Region resolution | 24 часа | `region:{region_name}` |
+
+### Graceful degradation
+
+При недоступности Redis — cache miss, прямой запрос к Qdrant/PG. При ошибке записи — cache пропускается, запрос всё равно выполняется.
+
+### Последствия
+
+- Разные TTL для разных типов данных
+- SHA-256 ключ гарантирует отсутствие коллизий
+- При недоступности Redis — graceful degradation
+- Cache-aside имеет race condition при параллельных запросах (два одновременных miss → два запроса в Qdrant) — приемлемо для текущих нагрузок

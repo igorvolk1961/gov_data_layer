@@ -175,13 +175,13 @@ def main() -> None:
 
     service = ODLService(cache=cache, db=db, qdrant=qdrant_store, embedder=embedder)
 
-    # Create FastAPI app (REST) with cache and db for health check
-    app = create_app(service, cache=cache, db=db)
+    # Create FastAPI app (REST) with cache, db, and qdrant for health check
+    app = create_app(service, cache=cache, db=db, qdrant=qdrant_store)
 
     # Create MCP server and mount as SSE app under /mcp
     mcp_server = create_mcp_server(service)
     mcp_sse_app = mcp_server.sse_app(mount_path="/mcp")
-    app.mount("/mcp", mcp_sse_app)
+    app.mount("/mcp", mcp_sse_app, name="mcp")
 
     logger.info(
         "Starting server on http://%s:%s",

@@ -89,11 +89,24 @@ class ODLServiceProtocol(Protocol):
     async def get_document_detail(
         self,
         source_id: str,
+        query: str | None = None,
+        context: SearchContext | None = None,
+        max_citation_length: int = 2000,
     ) -> DocumentDetail:
         """Получить полную карточку документа по ID.
 
         Args:
-            source_id: Идентификатор документа в источнике.
+            source_id: Идентификатор документа в источнике
+                (формат `{source_id}-{publish_id}`, как возвращает search).
+            query: Опциональный поисковый запрос для фильтрации citations.
+                Если передан — возвращаются только цитаты из разделов,
+                релевантных запросу (векторный поиск по чанкам документа).
+            context: Опциональные параметры фильтрации (регион, тема,
+                score_threshold и т.д.) для поиска релевантных чанков.
+                Игнорируется если query не передан.
+            max_citation_length: Максимальная суммарная длина всех цитат
+                в символах (default: 2000). Если общая длина превышает
+                лимит — менее релевантные цитаты отбрасываются.
 
         Returns:
             DocumentDetail — полная карточка с текстом, цитатами и оглавлением.

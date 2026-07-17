@@ -223,6 +223,17 @@ class DocumentRepository:
                     topic_id,
                 )
 
+    async def get_document_uuid(
+        self,
+        publish_id: str,
+    ) -> str | None:
+        """Get the internal UUID of a document by its publish_id."""
+        row = await self._db.fetchval(
+            "SELECT id FROM document WHERE publish_id = $1",
+            publish_id,
+        )
+        return str(row) if row else None
+
     async def get_document_by_publish_id(
         self,
         publish_id: str,

@@ -137,6 +137,17 @@ class TestHealth:
         data = resp.json()
         assert data["status"] == "ok"
         assert "redis" in data
+        assert "database" in data
+        assert "qdrant" in data
+        assert "langfuse" in data
+
+    def test_qdrant_unavailable_when_not_provided(self, client: TestClient) -> None:
+        """Qdrant status is 'unavailable' when no QdrantStore is passed to create_app."""
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["qdrant"] == "unavailable"
+        assert data["langfuse"] == "unavailable"  # FileFallbackTracer — not LangFuse
 
 
 # ──────────────────────────────────────────────

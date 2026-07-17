@@ -1,12 +1,13 @@
 """List MCP tools — connects to the running server and shows all available tools.
 
+Uses the MCP client library to connect via SSE.
+
 Usage:
     # Terminal 1 — start server:
     uv run python -m core.main
 
     # Terminal 2 — list tools:
     uv run python scripts/mcp_list_tools.py
-    uv run python scripts/mcp_list_tools.py --format raw
 """
 
 from __future__ import annotations
@@ -16,28 +17,8 @@ import asyncio
 import json
 import sys
 
-import httpx
 from mcp import types
 from mcp.client.sse import sse_client
-
-
-async def _discover_endpoint(base_url: str) -> str | None:
-    """Try to discover the SSE endpoint by probing common URL patterns."""
-    patterns = [
-        base_url,
-        f"{base_url}/sse",
-        f"{base_url.rstrip('/')}/sse",
-    ]
-    async with httpx.AsyncClient(follow_redirects=True, timeout=5) as client:
-        for url in patterns:
-            try:
-                r = await client.get(url)
-                content_type = r.headers.get("content-type", "")
-                if "text/event-stream" in content_type or r.status_code == 200:
-                    return url
-            except Exception:
-                continue
-    return None
 
 
 async def main() -> None:
@@ -45,7 +26,7 @@ async def main() -> None:
     parser.add_argument(
         "--url",
         default="http://localhost:8000/mcp",
-        help="MCP SSE endpoint URL (default: http://localhost:8000/mcp)",
+        help="MCP base URL (default: http://localhost:8000/mcp)",
     )
     parser.add_argument(
         "--format",
@@ -55,18 +36,10 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    # Discover the actual SSE endpoint
-    sse_url = await _discover_endpoint(args.url)
-    if sse_url is None:
-        print(f"Error: Cannot connect to MCP server at {args.url}", file=sys.stderr)
-        print("Make sure the server is running: uv run python -m core.main", file=sys.stderr)
-        print("Also check the URL. Try: --url http://localhost:8000/mcp/sse", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Connecting to {sse_url}...", file=sys.stderr)
+    print(f"Connecting to {args.url}...", file=sys.stderr)
 
     try:
-        async with sse_client(url=sse_url) as (read, write):
+        async with sse_client(url=args.url) as (read, write):
             # Initialize
             init_request = types.JSONRPCRequest(
                 jsonrpc="2.0",
@@ -82,7 +55,7 @@ async def main() -> None:
                 ),
             )
             await write(init_request.model_dump(by_alias=True, mode="json"))
-            await read()
+            await read()  # init response
             print("Connected.", file=sys.stderr)
 
             # Send initialized notification
@@ -106,7 +79,6 @@ async def main() -> None:
                 print(json.dumps(list_response, indent=2, ensure_ascii=False))
                 return
 
-            # Human format
             tools_data = list_response.get("result", {}).get("tools", [])
             if not tools_data:
                 print("No tools found.")
@@ -139,7 +111,10 @@ async def main() -> None:
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
-        print("Make sure the server is running: uv run python -m core.main", file=sys.stderr)
+        print(
+            "Make sure the server is running: uv run python -m core.main",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 

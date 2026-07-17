@@ -428,13 +428,22 @@ class ODLService(ODLServiceProtocol):
     async def get_document_detail(
         self,
         source_id: str,
+        query: str | None = None,
+        context: SearchContext | None = None,
+        max_citation_length: int = 2000,
     ) -> DocumentDetail:
         """Полная карточка документа — сборка из Qdrant + PostgreSQL.
 
-        1. Получает метаданные документа из PostgreSQL (через doc_repo).
-        2. Получает чанки документа из Qdrant, собирает цитаты.
-        3. Получает TOC из PostgreSQL (через section_repo).
-        4. Если БД недоступна — NotFoundError.
+        Принимает ID документа в том же формате, что возвращает search:
+        - `{source_id}-{publish_id}` (например `pravo-0001202012230060`)
+        - или просто `publish_id` (например `0001202012230060`)
+
+        1. Извлекает publish_id из составного ID.
+        2. Получает метаданные документа из PostgreSQL (через doc_repo).
+        3. Если передан query — ищет релевантные чанки в Qdrant.
+        4. Получает TOC из PostgreSQL (через section_repo).
+        5. Собирает цитаты из чанков, обрезает до max_citation_length.
+        6. Если БД недоступна — NotFoundError.
 
         Результаты кэшируются в Redis на 1 час (cache-aside).
         """
@@ -449,32 +458,47 @@ class ODLService(ODLServiceProtocol):
                 logger.warning("Cache lookup failed for detail — falling through", exc_info=True)
 
         with self.tracer.trace("get_document_detail", source_id=source_id) as span:
-            span.set_input({"source_id": source_id})
+            span.set_input(
+                {"source_id": source_id, "query": query, "max_citation_length": max_citation_length}
+            )
 
             # Get document metadata from PostgreSQL
             doc_repo = self._doc_repo_lazy
             if doc_repo is None:
                 raise NotFoundError(f"Document {source_id} not found (no database configured)")
 
-            doc_meta = await doc_repo.get_document_by_id(source_id)
+            # Разбираем составной ID: search возвращает "source_id-publish_id"
+            publish_id = source_id.split("-", 1)[1] if "-" in source_id else source_id
+
+            doc_meta = await doc_repo.get_document_by_publish_id(publish_id)
             if doc_meta is None:
-                raise NotFoundError(f"Document {source_id} not found")
+                raise NotFoundError(f"Document {publish_id} not found")
 
             # Get TOC from PostgreSQL
+            # Note: doc_meta.id is in compound format "source_id-publish_id",
+            # but section_repo.get_sections expects the DB UUID. Fetch it.
             section_repo = self._section_repo_lazy
             toc: list[TocNode] = []
             if section_repo is not None:
                 try:
-                    toc = await section_repo.get_toc(doc_meta.id)  # type: ignore[attr-defined]
+                    db_uuid = await doc_repo.get_document_uuid(publish_id)
+                    if db_uuid:
+                        toc = await section_repo.get_sections(db_uuid)
                 except Exception:
                     logger.exception("Failed to get TOC for document %s", source_id)
 
             # Build citations from Qdrant chunks
+            # Qdrant chunks хранят document_id в формате "source_id-publish_id"
+            qdrant_doc_id = f"{doc_meta.source.id}-{publish_id}" if doc_meta.source else publish_id
+
             citations = await self._build_citations_from_qdrant(
-                doc_id=doc_meta.id,
+                doc_id=qdrant_doc_id,
                 doc_url=doc_meta.url or "",
                 doc_title=doc_meta.title or "",
                 toc=toc,
+                query=query,
+                context=context,
+                max_citation_length=max_citation_length,
             )
 
             detail = DocumentDetail(
@@ -514,14 +538,64 @@ class ODLService(ODLServiceProtocol):
         doc_url: str,
         doc_title: str,
         toc: list[TocNode],
+        query: str | None = None,
+        context: SearchContext | None = None,
+        max_citation_length: int = 2000,
     ) -> list[Citation]:
-        """Build citations from Qdrant chunks, falling back to title if unavailable."""
+        """Build citations from Qdrant chunks, falling back to title if unavailable.
+
+        Если передан query — ищет релевантные чанки через векторный поиск
+        по Qdrant (ограниченные document_id) и возвращает только цитаты
+        из релевантных разделов. Если query не передан — возвращает все
+        разделы документа.
+
+        Args:
+            doc_id: ID документа в Qdrant (source_id-publish_id).
+            doc_url: URL документа.
+            doc_title: Заголовок документа.
+            toc: Оглавление документа.
+            query: Поисковый запрос для фильтрации citations.
+            context: Контекст с параметрами фильтрации (score_threshold и др.).
+            max_citation_length: Максимальная суммарная длина всех цитат.
+
+        Returns:
+            Список Citation, отсортированный по релевантности.
+        """
         qdrant = self._qdrant_lazy
         if qdrant is not None:
             try:
-                chunks = await qdrant.get_chunks_by_document_id(doc_id)
-                if chunks:
-                    return self._merge_chunks_to_citations(chunks, doc_id, doc_url)
+                if query:
+                    # Векторный поиск по чанкам документа
+                    ctx = context or SearchContext()
+                    embedder = self._embedder_lazy
+                    query_vector = await embedder.embed_query(query)
+                    score_threshold = (
+                        ctx.score_threshold if ctx.score_threshold is not None else 0.5
+                    )
+                    max_chunks = ctx.max_results  # default 5
+
+                    qdrant_chunks = await qdrant.search(
+                        query_embedding=query_vector,
+                        limit=max_chunks,
+                        context=ctx,
+                        filters={"document_id": doc_id},
+                    )
+                    # Filter by score threshold, sort descending, take top N
+                    filtered = [
+                        (chunk, score) for chunk, score in qdrant_chunks if score >= score_threshold
+                    ]
+                    if filtered:
+                        filtered.sort(key=lambda x: x[1], reverse=True)
+                        # Take only top max_chunks
+                        top_chunks = [chunk for chunk, _ in filtered[:max_chunks]]
+                        citations = self._merge_chunks_to_citations(top_chunks, doc_id, doc_url)
+                        # Truncate to max_citation_length
+                        return self._truncate_citations(citations, max_citation_length)
+                else:
+                    # Нет query — возвращаем все чанки документа
+                    chunks = await qdrant.get_chunks_by_document_id(doc_id)
+                    if chunks:
+                        return self._merge_chunks_to_citations(chunks, doc_id, doc_url)
             except Exception as exc:
                 logger.warning("Qdrant error building citations for %s: %s", doc_id, exc)
 
@@ -534,6 +608,36 @@ class ODLService(ODLServiceProtocol):
                 section=[toc[0].title] if toc else None,
             ),
         ]
+
+    @staticmethod
+    def _truncate_citations(
+        citations: list[Citation],
+        max_length: int,
+    ) -> list[Citation]:
+        """Truncate citations list to fit within max_length total characters.
+
+        Если суммарная длина всех citation.text превышает max_length,
+        менее релевантные (последние в списке) цитаты отбрасываются.
+        """
+        total = 0
+        result: list[Citation] = []
+        for c in citations:
+            if total + len(c.text) > max_length:
+                # Частичное усечение последней цитаты
+                remaining = max_length - total
+                if remaining > 100:
+                    result.append(
+                        Citation(
+                            text=c.text[:remaining] + "…",
+                            source_id=c.source_id,
+                            url=c.url,
+                            section=c.section,
+                        )
+                    )
+                break
+            result.append(c)
+            total += len(c.text)
+        return result
 
     @staticmethod
     def _merge_chunks_to_citations(

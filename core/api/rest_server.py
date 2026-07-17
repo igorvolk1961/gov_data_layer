@@ -14,12 +14,12 @@ Swagger UI автоматически доступен на /docs.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from core.cache import CacheClient
 from core.errors import InvalidInputError, NotFoundError, SourceUnavailableError
@@ -47,61 +47,83 @@ class SearchRequest(BaseModel):
 
 
 if TYPE_CHECKING:
+    from core.index.qdrant_store import QdrantStore
     from core.odl_service_protocol import ODLServiceProtocol
 
-if TYPE_CHECKING:
-    pass
 
+class _TracingASGIMiddleware:
+    """ASGI middleware that traces HTTP requests.
 
-def _add_tracing_middleware(app: FastAPI) -> None:
-    """Add tracing middleware that wraps each request in a tracer span.
-
-    Uses the global Tracer (configured via core.observability.configure()).
-    Each HTTP request gets a trace with method, path, and status code tags.
+    Uses raw ASGI interface to avoid BaseHTTPMiddleware body-streaming issues
+    with SSE (Server-Sent Events) used by the MCP endpoint.
+    SSE paths (/mcp) are passed through without tracing.
     """
-    tracer = get_tracer()
 
-    @app.middleware("http")
-    async def trace_request(
-        request: Request,
-        call_next: Callable[[Request], Awaitable[Response]],
-    ) -> Response:
-        # Skip tracing for SSE/MCP endpoint — SSE streaming is not compatible
-        # with BaseHTTPMiddleware body streaming wrapper.
-        if request.url.path.startswith("/mcp"):
-            return await call_next(request)
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+        self._tracer = get_tracer()
 
-        trace_name = f"{request.method} {request.url.path}"
-        with tracer.trace(trace_name, method=request.method, path=request.url.path) as span:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Skip tracing for SSE/MCP paths
+        path = scope.get("path", "")
+        if path.startswith("/mcp"):
+            await self.app(scope, receive, send)
+            return
+
+        from urllib.parse import parse_qsl
+
+        trace_name = f"{scope['method']} {path}"
+        with self._tracer.trace(trace_name, method=scope["method"], path=path) as span:
             span.set_input(
                 {
-                    "method": request.method,
-                    "path": str(request.url.path),
-                    "query_params": dict(request.query_params),
+                    "method": scope["method"],
+                    "path": path,
+                    "query_params": dict(parse_qsl(scope.get("query_string", b"").decode())),
                 }
             )
+
+            # Wrap send to capture status_code
+            status_code = [200]
+
+            from collections.abc import MutableMapping
+
+            async def _send(message: MutableMapping[str, Any]) -> None:
+                if message.get("type") == "http.response.start":
+                    status_code[0] = message.get("status", 200)
+                await send(message)
+
             try:
-                response: Response = await call_next(request)
-                span.set_output(
-                    {
-                        "status_code": response.status_code,
-                    }
-                )
-                if response.status_code >= 500:
-                    span.set_error(Exception(f"HTTP {response.status_code}"))
-                return response
+                await self.app(scope, receive, _send)
             except asyncio.CancelledError:
                 span.set_error(asyncio.CancelledError("Request cancelled"))
                 raise
             except Exception as e:
                 span.set_error(e)
                 raise
+            finally:
+                span.set_output({"status_code": status_code[0]})
+                if status_code[0] >= 500:
+                    span.set_error(Exception(f"HTTP {status_code[0]}"))
+
+
+def _add_tracing_middleware(app: FastAPI) -> None:
+    """Add ASGI tracing middleware that wraps each request in a tracer span.
+
+    Uses raw ASGI middleware instead of @app.middleware("http") to avoid
+    BaseHTTPMiddleware body-streaming issues with SSE (MCP endpoint).
+    """
+    app.add_middleware(_TracingASGIMiddleware)
 
 
 def create_app(
     service: ODLServiceProtocol,
     cache: CacheClient | None = None,
     db: DatabaseClient | None = None,
+    qdrant: QdrantStore | None = None,
 ) -> FastAPI:
     """Создать FastAPI-приложение с внедрённым ODLService.
 
@@ -109,6 +131,7 @@ def create_app(
         service: Реализация ODLServiceProtocol (заглушка или настоящий сервис).
         cache: Опциональный CacheClient для отчёта о состоянии Redis.
         db: Опциональный DatabaseClient для отчёта о состоянии PostgreSQL.
+        qdrant: Опциональный QdrantStore для отчёта о состоянии Qdrant.
 
     Returns:
         Настроенное FastAPI-приложение.
@@ -134,11 +157,28 @@ def create_app(
         """Проверка работоспособности сервиса."""
         redis_status = "connected" if (cache and cache.available) else "unavailable"
         db_status = "connected" if (db and db.available) else "unavailable"
+
+        # Qdrant health check
+        qdrant_status = "unavailable"
+        if qdrant is not None:
+            qdrant_ok = await qdrant.check_health()
+            qdrant_status = "connected" if qdrant_ok else "unavailable"
+
+        # LangFuse health check (via tracer.check_health — performs auth_check for LangFuseTracer,
+        # returns False for FileFallbackTracer since LangFuse itself is not available)
+        langfuse_status = "unavailable"
+        tracer = get_tracer()
+        if tracer is not None:
+            langfuse_ok = tracer.check_health()
+            langfuse_status = "connected" if langfuse_ok else "unavailable"
+
         return JSONResponse(
             content={
                 "status": "ok",
                 "redis": redis_status,
                 "database": db_status,
+                "qdrant": qdrant_status,
+                "langfuse": langfuse_status,
             }
         )
 
@@ -178,17 +218,42 @@ def create_app(
     # Document detail
     # ------------------------------------------------------------------
     @app.get("/api/v1/documents/{source_id}")
-    async def get_document_detail(source_id: str) -> JSONResponse:
+    async def get_document_detail(
+        source_id: str,
+        query: str | None = None,
+        region: str | None = None,
+        topic: str | None = None,
+        score_threshold: float | None = None,
+        max_citation_length: int = 2000,
+        max_chunks: int = 5,
+    ) -> JSONResponse:
         """Получить полную карточку документа.
 
         Args:
-            source_id: Идентификатор документа в источнике.
+            source_id: Идентификатор документа в источнике
+                (формат `{source_id}-{publish_id}`, как возвращает search).
+            query: Опциональный поисковый запрос для фильтрации цитат.
+            region: Опциональный фильтр по региону.
+            topic: Опциональный фильтр по теме.
+            score_threshold: Минимальный порог релевантности (0.0-1.0).
+            max_citation_length: Максимальная суммарная длина цитат.
 
         Returns:
             DocumentDetail — полная карточка с текстом и цитатами.
         """
         try:
-            detail = await service.get_document_detail(source_id)
+            ctx = SearchContext(
+                region=region,
+                topic=[topic] if topic else None,
+                score_threshold=score_threshold,
+                max_results=max_chunks,
+            )
+            detail = await service.get_document_detail(
+                source_id=source_id,
+                query=query,
+                context=ctx if (query or region or topic or score_threshold is not None) else None,
+                max_citation_length=max_citation_length,
+            )
             return JSONResponse(content=detail.model_dump(mode="json"))
         except NotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e)) from None

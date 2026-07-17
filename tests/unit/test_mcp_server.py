@@ -249,7 +249,9 @@ class TestGetDocumentDetail:
         assert "error" not in result
         assert result["id"] == "doc-1"
         assert result["title"] == "Test Document"
-        mock_service.get_document_detail.assert_awaited_once_with("doc-1")
+        mock_service.get_document_detail.assert_awaited_once_with(
+            source_id="doc-1", query=None, context=None, max_citation_length=2000
+        )
 
     @pytest.mark.asyncio
     async def test_not_found(

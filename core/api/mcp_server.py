@@ -110,23 +110,54 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
         name="get_document_detail",
         description=(
             "Get the full document card by its source_id. "
-            "Contains the full text, citations with section references, "
-            "and table of contents."
+            "Contains citations with section references "
+            "and table of contents. "
+            "Optionally filter citations by a search query "
+            "to return only relevant sections."
         ),
     )
     async def get_document_detail(
         source_id: str,
+        query: str | None = None,
+        region: str | None = None,
+        topic: str | None = None,
+        score_threshold: float | None = None,
+        max_citation_length: int = 2000,
+        max_chunks: int = 5,
     ) -> dict[str, Any]:
-        """Full document card.
+        """Full document card with optional citation filtering.
 
         Args:
-            source_id: Document identifier in the source.
+            source_id: Document identifier (format: source_id-publish_id,
+                same as search returns, e.g. 'pravo-0001202012230060').
+            query: Optional search query to filter citations.
+                Only citations from sections relevant to this query
+                are returned (vector search over document chunks).
+            region: Optional region filter for citation search.
+            topic: Optional topic filter for citation search.
+            score_threshold: Minimum relevance score (0.0-1.0) for
+                citation filtering. Default: 0.5.
+            max_citation_length: Maximum total citation length in chars.
+                Default: 2000.
 
         Returns:
             DocumentDetail as dict (mode="json").
         """
         try:
-            detail = await service.get_document_detail(source_id)
+            from core.models.models import SearchContext
+
+            ctx = SearchContext(
+                region=region,
+                topic=[topic] if topic else None,
+                score_threshold=score_threshold,
+                max_results=max_chunks,
+            )
+            detail = await service.get_document_detail(
+                source_id=source_id,
+                query=query,
+                context=ctx if (query or region or topic or score_threshold is not None) else None,
+                max_citation_length=max_citation_length,
+            )
             return detail.model_dump(mode="json")
         except NotFoundError as e:
             return _error_response(str(e), "NOT_FOUND")

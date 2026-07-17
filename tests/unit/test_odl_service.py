@@ -41,11 +41,24 @@ def doc_repo_mock() -> MagicMock:
         document_number="doc-1",
     )
 
-    # Return doc for known IDs, None for unknown (for test_unknown_document_raises)
+    # get_document_by_id — kept for get_toc which uses UUID lookup
     async def _get_by_id(doc_id: str) -> OfficialDocument | None:
         return doc if doc_id in ("doc-1", "stub-doc-001") else None
 
     mock.get_document_by_id = AsyncMock(side_effect=_get_by_id)
+
+    # get_document_by_publish_id — used by get_document_detail
+    # The compound ID "doc-1" is parsed as source_id="doc", publish_id="1"
+    async def _get_by_publish_id(publish_id: str) -> OfficialDocument | None:
+        return doc if publish_id in ("1", "stub-doc-001") else None
+
+    mock.get_document_by_publish_id = AsyncMock(side_effect=_get_by_publish_id)
+
+    # get_document_uuid — used by get_document_detail for TOC lookup
+    async def _get_uuid(publish_id: str) -> str | None:
+        return "stub-doc-001" if publish_id == "1" else None
+
+    mock.get_document_uuid = AsyncMock(side_effect=_get_uuid)
     return mock
 
 
@@ -99,6 +112,12 @@ def section_repo_mock() -> MagicMock:
         return [toc_node] if document_uuid in ("doc-1", "stub-doc-001") else []
 
     mock.get_toc = AsyncMock(side_effect=_get_toc)
+
+    # get_sections — used by get_document_detail when query is not provided
+    async def _get_sections(document_uuid: str) -> list[TocNode]:
+        return [toc_node, child_node] if document_uuid in ("doc-1", "stub-doc-001") else []
+
+    mock.get_sections = AsyncMock(side_effect=_get_sections)
     return mock
 
 

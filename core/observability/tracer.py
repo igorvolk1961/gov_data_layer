@@ -168,6 +168,15 @@ class Tracer(ABC):
         """Whether the tracer backend is available and operational."""
         ...
 
+    def check_health(self) -> bool:
+        """Check backend connectivity.
+
+        Performs a lightweight connectivity check against the tracing backend.
+        Returns True if the backend is reachable and responsive, False otherwise.
+        Default implementation delegates to is_available.
+        """
+        return self.is_available
+
     @abstractmethod
     def trace(
         self,
@@ -296,6 +305,14 @@ class LangFuseTracer(Tracer):
     def is_available(self) -> bool:
         return self._client is not None
 
+    def check_health(self) -> bool:
+        """Verify LangFuse connectivity with an auth check.
+
+        Returns True if LangFuse is reachable and API keys are valid.
+        Results are cached for _VERIFY_TTL seconds to avoid per-request network calls.
+        """
+        return self._verify_connection()
+
     def trace(
         self,
         name: str,
@@ -363,6 +380,14 @@ class FileFallbackTracer(Tracer):
     @property
     def is_available(self) -> bool:
         return True
+
+    def check_health(self) -> bool:
+        """FileFallbackTracer is never considered healthy for LangFuse checks.
+
+        Returns False because LangFuse itself is not available —
+        only the local file fallback is being used.
+        """
+        return False
 
     def __init__(self, config: ObservabilityConfig) -> None:
         self._config = config

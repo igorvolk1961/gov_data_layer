@@ -512,6 +512,22 @@ class QdrantStore:
         result = client.count(collection_name=self._collection)
         return result.count  # type: ignore[no-any-return]
 
+    async def check_health(self) -> bool:
+        """Check Qdrant connectivity by listing collections.
+
+        Returns:
+            True if Qdrant is reachable and responsive, False otherwise.
+        """
+        client = await self._get_client()
+        if client is None:
+            return False
+        try:
+            client.get_collections()
+            return True
+        except Exception:
+            logger.warning("Qdrant health check failed")
+            return False
+
     # ── Topic Collection ─────────────────────────────────────────────
 
     async def ensure_topic_collection(self) -> None:
