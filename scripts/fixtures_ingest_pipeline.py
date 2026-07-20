@@ -53,12 +53,14 @@ async def main() -> None:
     # ── Step 1: Clean + load reference tables ────────────────────────
     print("\n=== Step 1: Cleaning and loading reference data ===")
     for table in [
-        "document_rubric",
+        "section_topic",
+        "document_organization",
         "document_topic",
+        "document_section_modification",
+        "document_revocation",
         "document_section",
         "document",
         "topic",
-        "rubric",
         "region",
         "organization",
         "document_type",
