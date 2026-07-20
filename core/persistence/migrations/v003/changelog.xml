@@ -5,8 +5,11 @@
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.28.xsd">
 
-    <include file="v001/changelog.xml" relativeToChangelogFile="true"/>
-    <include file="v002/changelog.xml" relativeToChangelogFile="true"/>
-    <include file="v003/changelog.xml" relativeToChangelogFile="true"/>
+    <!--
+        v003 — Remove unused document_organization table.
+        The M:N junction was never populated; the actual link is
+        stored in document.organization_id (added in v001-008).
+    -->
+    <include file="000_drop_document_organization.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>

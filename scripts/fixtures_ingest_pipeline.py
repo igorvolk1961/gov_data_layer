@@ -54,7 +54,6 @@ async def main() -> None:
     print("\n=== Step 1: Cleaning and loading reference data ===")
     for table in [
         "section_topic",
-        "document_organization",
         "document_topic",
         "document_section_modification",
         "document_revocation",

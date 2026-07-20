@@ -2,7 +2,7 @@
 
 Maps between OfficialDocument (canonical model) and the relational document table.
 Handles reference table lookups (document_type, jurisdiction, region, etc.)
-and M:N junction tables (document_organization, document_topic).
+and M:N junction table (document_topic).
 """
 
 from __future__ import annotations
