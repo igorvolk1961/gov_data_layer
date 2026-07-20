@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -38,7 +39,7 @@ from core.persistence.db_client import DatabaseClient  # noqa: E402
 
 TEST_DSN = os.environ.get(
     "DATABASE_URL",
-    "postgresql://odl:odl@127.0.0.1:5433/odl_metadata?sslmode=disable",
+    "postgresql://odl:odl@127.0.0.1:5433/odl_metadata?sslmode=disable",  # pragma: allowlist secret
 )
 
 
@@ -105,16 +106,19 @@ async def jurisdiction_id(db: DatabaseClient, source_uuid: str) -> str:
 
 
 @pytest_asyncio.fixture
-async def region_id(db: DatabaseClient, source_uuid: str) -> str:
-    """Insert a test region and return its UUID."""
-    result = await db.upsert(
-        table="region",
-        data={
-            "source_id": source_uuid,
-            "external_id": "test-region",
-            "name": "Test Region",
-        },
-        conflict_columns=["source_id", "external_id"],
+async def region_id(db: DatabaseClient) -> AsyncIterator[str]:
+    """Insert a test region and return its UUID. Cleans up after the test."""
+    result = await db.fetchrow(
+        """
+        INSERT INTO region (external_id, name)
+        VALUES ($1, $2)
+        ON CONFLICT (external_id) DO UPDATE SET name = EXCLUDED.name
+        RETURNING id
+        """,
+        "test-region",
+        "Test Region",
     )
     assert result is not None
-    return str(result["id"])
+    rid = str(result["id"])
+    yield rid
+    await db.execute("DELETE FROM region WHERE id = $1", rid)

@@ -260,15 +260,19 @@ async def test_jsonb_serialize_deserialize_roundtrip(
     assert result is not None
     doc_uuid = str(result["id"])
 
-    # Read back and deserialize
-    row = await db.fetchrow(
-        "SELECT meta FROM document WHERE id = $1::uuid",
-        doc_uuid,
-    )
-    assert row is not None
+    try:
+        # Read back and deserialize
+        row = await db.fetchrow(
+            "SELECT meta FROM document WHERE id = $1::uuid",
+            doc_uuid,
+        )
+        assert row is not None
 
-    deserialized = DatabaseClient.deserialize_jsonb(row["meta"])
-    assert deserialized == test_meta
+        deserialized = DatabaseClient.deserialize_jsonb(row["meta"])
+        assert deserialized == test_meta
+    finally:
+        # Cleanup: delete the test document
+        await db.execute("DELETE FROM document WHERE id = $1::uuid", doc_uuid)
 
 
 @pytest.mark.integration
