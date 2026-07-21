@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths-ignore:
       - "README.md"
       - "plans/**"
@@ -14,7 +14,7 @@ on:
       - ".secrets.baseline"
       - ".kilorules"
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths-ignore:
       - "README.md"
       - "plans/**"
