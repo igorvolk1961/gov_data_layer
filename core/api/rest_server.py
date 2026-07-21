@@ -152,7 +152,10 @@ def create_app(
     @app.get("/health")
     async def health() -> JSONResponse:
         """Проверка работоспособности сервиса."""
-        redis_status = "connected" if (cache and cache.available) else "unavailable"
+        redis_status = "unavailable"
+        if cache is not None:
+            redis_ok = await cache.check_health()
+            redis_status = "connected" if redis_ok else "unavailable"
         db_status = "connected" if (db and db.available) else "unavailable"
 
         # Qdrant health check
@@ -213,11 +216,10 @@ def create_app(
     # ------------------------------------------------------------------
     # Document detail
     # ------------------------------------------------------------------
-    @app.get("/api/v1/documents/{source_id}")
+    @app.get("/api/v1/documents/{document_id}")
     async def get_document_detail(
-        source_id: str,
+        document_id: str,
         query: str | None = None,
-        region: str | None = None,
         score_threshold: float | None = None,
         max_citation_length: int = 2000,
         max_chunks: int = 5,
@@ -225,11 +227,10 @@ def create_app(
         """Получить полную карточку документа.
 
         Args:
-            source_id: Идентификатор документа в источнике
-                (формат `{source_id}-{publish_id}`, как возвращает search).
+            document_id: Составной идентификатор документа
+                (формат `{source_id}-{publish_id}`, как возвращает search,
+                например 'pravo-0001202012230060').
             query: Опциональный поисковый запрос для фильтрации цитат.
-            region: Опциональный фильтр по региону.
-            topic: Опциональный фильтр по теме.
             score_threshold: Минимальный порог релевантности (0.0-1.0).
             max_citation_length: Максимальная суммарная длина цитат.
 
@@ -238,14 +239,13 @@ def create_app(
         """
         try:
             ctx = SearchContext(
-                region=region,
                 score_threshold=score_threshold,
                 max_results=max_chunks,
             )
             detail = await service.get_document_detail(
-                source_id=source_id,
+                source_id=document_id,
                 query=query,
-                context=ctx if (query or region or score_threshold is not None) else None,
+                context=ctx if (query or score_threshold is not None) else None,
                 max_citation_length=max_citation_length,
             )
             return JSONResponse(content=detail.model_dump(mode="json"))

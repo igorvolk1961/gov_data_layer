@@ -179,8 +179,12 @@ def main() -> None:
     app = create_app(service, cache=cache, db=db, qdrant=qdrant_store)
 
     # Create MCP server and mount as SSE app under /mcp
+    # The SSE app's default paths:
+    #   SSE endpoint: /sse (client connects to http://host/mcp/sse)
+    #   POST messages: /messages/ (internal, set via SSE endpoint's first event)
+    # FastAPI's app.mount() strips the "/mcp" prefix before forwarding to the SSE app.
     mcp_server = create_mcp_server(service)
-    mcp_sse_app = mcp_server.sse_app(mount_path="/mcp")
+    mcp_sse_app = mcp_server.sse_app()
     app.mount("/mcp", mcp_sse_app, name="mcp")
 
     logger.info(

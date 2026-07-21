@@ -61,7 +61,6 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
         max_results: int = 10,
         region: str | None = None,
         organization: list[str] | None = None,
-        official_only: bool = False,
         max_age_days: int | None = None,
     ) -> dict[str, Any]:
         """Search documents by query.
@@ -72,7 +71,6 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
             max_results: Maximum number of results (1-50).
             region: Region filter.
             organization: Organization filter (e.g. ["FNS", "Ministry of Justice"]).
-            official_only: Only official sources.
             max_age_days: Maximum document age in days.
 
         Returns:
@@ -85,7 +83,6 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
             max_results=max_results,
             region=region,
             organization=organization,
-            official_only=official_only,
             max_age_days=max_age_days,
         )
         try:
@@ -112,10 +109,8 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
         ),
     )
     async def get_document_detail(
-        source_id: str,
+        document_id: str,
         query: str | None = None,
-        region: str | None = None,
-        topic: str | None = None,
         score_threshold: float | None = None,
         max_citation_length: int = 2000,
         max_chunks: int = 5,
@@ -123,13 +118,11 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
         """Full document card with optional citation filtering.
 
         Args:
-            source_id: Document identifier (format: source_id-publish_id,
-                same as search returns, e.g. 'pravo-0001202012230060').
+            document_id: Compound document identifier
+                (format: `{source_id}-{publish_id}`, e.g. 'pravo-0001202012230060').
             query: Optional search query to filter citations.
                 Only citations from sections relevant to this query
                 are returned (vector search over document chunks).
-            region: Optional region filter for citation search.
-            topic: Optional topic filter for citation search.
             score_threshold: Minimum relevance score (0.0-1.0) for
                 citation filtering. Default: 0.5.
             max_citation_length: Maximum total citation length in chars.
@@ -139,18 +132,14 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
             DocumentDetail as dict (mode="json").
         """
         try:
-            from core.models.models import SearchContext
-
             ctx = SearchContext(
-                region=region,
-                topic=[topic] if topic else None,
                 score_threshold=score_threshold,
                 max_results=max_chunks,
             )
             detail = await service.get_document_detail(
-                source_id=source_id,
+                source_id=document_id,
                 query=query,
-                context=ctx if (query or region or topic or score_threshold is not None) else None,
+                context=ctx if (query or score_threshold is not None) else None,
                 max_citation_length=max_citation_length,
             )
             return detail.model_dump(mode="json")

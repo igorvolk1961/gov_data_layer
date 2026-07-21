@@ -25,14 +25,14 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="List MCP server tools")
     parser.add_argument(
         "--url",
-        default="http://localhost:8000/mcp",
-        help="MCP base URL (default: http://localhost:8000/mcp)",
+        default="http://localhost:8000/mcp/sse",
+        help="MCP SSE URL (default: http://localhost:8000/mcp/sse)",
     )
     parser.add_argument(
         "--format",
         choices=["human", "raw"],
-        default="human",
-        help="Output format: human (default), raw (full JSON schema)",
+        default="raw",
+        help="Output format: human, raw (full JSON schema, default)",
     )
     args = parser.parse_args()
 
@@ -41,21 +41,22 @@ async def main() -> None:
     try:
         async with sse_client(url=args.url) as (read, write):
             # Initialize
+            init_params = types.InitializeRequestParams(
+                protocolVersion=types.LATEST_PROTOCOL_VERSION,
+                capabilities=types.ClientCapabilities(),
+                clientInfo=types.Implementation(
+                    name="mcp-list-tools",
+                    version="1.0.0",
+                ),
+            ).model_dump(mode="json")
             init_request = types.JSONRPCRequest(
                 jsonrpc="2.0",
                 id="1",
                 method="initialize",
-                params=types.InitializeRequestParams(
-                    protocolVersion=types.LATEST_PROTOCOL_VERSION,
-                    capabilities=types.ClientCapabilities(),
-                    clientInfo=types.Implementation(
-                        name="mcp-list-tools",
-                        version="1.0.0",
-                    ),
-                ),
+                params=init_params,
             )
-            await write(init_request.model_dump(by_alias=True, mode="json"))
-            await read()  # init response
+            await write.send(init_request.model_dump(by_alias=True, mode="json"))
+            await read.receive()  # init response
             print("Connected.", file=sys.stderr)
 
             # Send initialized notification
@@ -63,17 +64,22 @@ async def main() -> None:
                 jsonrpc="2.0",
                 method="notifications/initialized",
             )
-            await write(initialized.model_dump(by_alias=True, mode="json"))
+            await write.send(initialized.model_dump(by_alias=True, mode="json"))
 
             # List tools
             list_request = types.JSONRPCRequest(
                 jsonrpc="2.0",
                 id="2",
                 method="tools/list",
-                params=types.PaginatedRequestParams(),
+                params=types.PaginatedRequestParams().model_dump(mode="json"),
             )
-            await write(list_request.model_dump(by_alias=True, mode="json"))
-            list_response = await read()
+            await write.send(list_request.model_dump(by_alias=True, mode="json"))
+            raw_msg = await read.receive()
+            # SessionMessage.message is a JSONRPCMessage with .root or .model_dump()
+            if hasattr(raw_msg, "message"):
+                list_response = raw_msg.message.model_dump(mode="json")
+            else:
+                list_response = raw_msg
 
             if args.format == "raw":
                 print(json.dumps(list_response, indent=2, ensure_ascii=False))
@@ -119,4 +125,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)

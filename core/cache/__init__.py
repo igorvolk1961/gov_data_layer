@@ -136,6 +136,15 @@ class CacheClient:
             logger.exception("Redis connection lost during delete — resetting")
             return False
 
+    async def check_health(self) -> bool:
+        """Actively check if Redis is reachable by attempting a ping.
+
+        Returns True if Redis responds, False otherwise.
+        Also updates ``self._available`` accordingly.
+        """
+        client = await self._connect()
+        return client is not None
+
     async def close(self) -> None:
         """Close the Redis connection gracefully."""
         if self._redis is not _UNSET and self._redis is not None:

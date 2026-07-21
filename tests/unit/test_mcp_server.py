@@ -4,8 +4,6 @@ Tests cover:
 - create_mcp_server returns a FastMCP instance with correct metadata
 - search_documents tool — success, validation, error mapping
 - get_document_detail tool — success, 404, 503
-- list_topics tool — success, 404
-- get_toc tool — success, 404
 """
 
 from __future__ import annotations
@@ -138,7 +136,6 @@ class TestSearchDocuments:
             max_results=20,
             region="Московская область",
             organization=["FNS"],
-            official_only=True,
             max_age_days=30,
         )
 
@@ -238,13 +235,16 @@ class TestGetDocumentDetail:
         mock_service.get_document_detail.return_value = sample_detail
         mcp = create_mcp_server(mock_service)
 
-        result = await _call_tool(mcp, "get_document_detail", source_id="doc-1")
+        result = await _call_tool(mcp, "get_document_detail", document_id="doc-1")
 
         assert "error" not in result
         assert result["id"] == "doc-1"
         assert result["title"] == "Test Document"
         mock_service.get_document_detail.assert_awaited_once_with(
-            source_id="doc-1", query=None, context=None, max_citation_length=2000
+            source_id="doc-1",
+            query=None,
+            context=None,
+            max_citation_length=2000,
         )
 
     @pytest.mark.asyncio
@@ -256,7 +256,7 @@ class TestGetDocumentDetail:
         mock_service.get_document_detail.side_effect = NotFoundError("doc not found")
         mcp = create_mcp_server(mock_service)
 
-        result = await _call_tool(mcp, "get_document_detail", source_id="missing")
+        result = await _call_tool(mcp, "get_document_detail", document_id="missing")
         assert result["error"] == "doc not found"
         assert result["code"] == "NOT_FOUND"
 
@@ -269,6 +269,6 @@ class TestGetDocumentDetail:
         mock_service.get_document_detail.side_effect = SourceUnavailableError("source down")
         mcp = create_mcp_server(mock_service)
 
-        result = await _call_tool(mcp, "get_document_detail", source_id="doc-1")
+        result = await _call_tool(mcp, "get_document_detail", document_id="doc-1")
         assert result["error"] == "source down"
         assert result["code"] == "SOURCE_UNAVAILABLE"

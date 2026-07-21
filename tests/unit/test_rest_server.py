@@ -4,9 +4,7 @@ Tests cover:
 - create_app returns a FastAPI instance with correct metadata
 - /health endpoint
 - POST /api/v1/search — success, validation, error mapping
-- GET /api/v1/documents/{source_id} — success, 404, 503
-- GET /api/v1/topics — success, 404
-- GET /api/v1/documents/{document_id}/toc — success, 404
+- GET /api/v1/documents/{document_id} — success, 404, 503
 - Tracing middleware wraps requests in spans
 """
 
@@ -117,7 +115,7 @@ class TestCreateApp:
         paths = schema["paths"]
         assert "/health" in paths
         assert "/api/v1/search" in paths
-        assert "/api/v1/documents/{source_id}" in paths
+        assert "/api/v1/documents/{document_id}" in paths
 
 
 # ──────────────────────────────────────────────
