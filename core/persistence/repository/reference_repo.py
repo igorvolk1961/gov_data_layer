@@ -67,18 +67,60 @@ class ReferenceRepository:
         external_id: str,
         name: str,
         weight: int | None = None,
+        jurisdiction_id: str | None = None,
+        region_id: str | None = None,
     ) -> str:
         """Get or create an organization record. Returns UUID string.
 
+        Supports optional FK links to jurisdiction and region tables.
+
         Raises: asyncpg.PostgresError, ConnectionError
         """
-        return await self._get_or_create(
-            table="organization",
-            source_id=source_id,
-            external_id=external_id,
-            name=name,
-            weight=weight,
+        row = await self._db.fetchrow(
+            """
+            SELECT id FROM organization
+            WHERE source_id = $1::uuid AND external_id = $2
+            """,
+            source_id,
+            external_id,
         )
+        if row is not None:
+            # Update FK columns if they are now provided (data enrichment)
+            if jurisdiction_id is not None or region_id is not None:
+                await self._db.execute(
+                    """
+                    UPDATE organization
+                    SET jurisdiction_id = COALESCE($1::uuid, jurisdiction_id),
+                        region_id = COALESCE($2::uuid, region_id)
+                    WHERE id = $3::uuid
+                    """,
+                    jurisdiction_id,
+                    region_id,
+                    str(row["id"]),
+                )
+            return str(row["id"])
+
+        result = await self._db.fetchrow(
+            """
+            INSERT INTO organization (source_id, external_id, name, weight,
+                                      jurisdiction_id, region_id)
+            VALUES ($1::uuid, $2, $3, COALESCE($4, 0), $5::uuid, $6::uuid)
+            ON CONFLICT (source_id, external_id) DO UPDATE
+                SET name = EXCLUDED.name,
+                    weight = COALESCE($4, organization.weight, 0),
+                    jurisdiction_id = COALESCE($5::uuid, organization.jurisdiction_id),
+                    region_id = COALESCE($6::uuid, organization.region_id)
+            RETURNING id
+            """,
+            source_id,
+            external_id,
+            name,
+            weight,
+            jurisdiction_id,
+            region_id,
+        )
+        assert result is not None
+        return str(result["id"])
 
     async def get_or_create_jurisdiction(
         self,
