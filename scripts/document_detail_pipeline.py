@@ -33,8 +33,8 @@ from core.errors import NotFoundError
 from core.index.qdrant_store import QdrantStore
 from core.ingest.embedder import Embedder
 from core.models.models import DocumentDetail, SearchContext
+from core.observability import ObservabilityConfig, get_tracer
 from core.observability import configure as configure_observability
-from core.observability import get_tracer
 from core.odl_service import ODLService
 from core.persistence import DatabaseClient
 
@@ -173,7 +173,7 @@ async def main() -> None:
         _format_input()
         return
 
-    configure_observability()
+    configure_observability(ObservabilityConfig(log_level="WARNING"))
     tracer = get_tracer()
     cfg = get_config()
 
@@ -221,7 +221,6 @@ async def main() -> None:
                     "document_id": detail.id,
                     "title": detail.title,
                     "citations_count": len(detail.citations),
-                    "toc_count": len(detail.toc),
                 }
             )
 

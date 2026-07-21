@@ -522,7 +522,6 @@ class TestDocumentDetail:
         assert detail.valid_to is None
         assert detail.legal_status == LegalStatus.ACTIVE
         assert detail.citations == []
-        assert detail.toc == []
 
     def test_with_all_fields(self) -> None:
         now = datetime.now(timezone.utc)
@@ -533,14 +532,6 @@ class TestDocumentDetail:
             section=["Раздел I", "Глава 2", "Статья 10"],
             span_start=100,
             span_end=200,
-        )
-        toc_node = TocNode(
-            id="sec-1",
-            document_id="doc-1",
-            title="Раздел 1",
-            parent_id="root",
-            level=0,
-            child_count=2,
         )
         detail = DocumentDetail(
             id="doc-1",
@@ -556,7 +547,6 @@ class TestDocumentDetail:
             valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
             legal_status=LegalStatus.ACTIVE,
             citations=[citation],
-            toc=[toc_node],
         )
         assert detail.jurisdiction == "федеральная"
         assert detail.region == "Московская область"
@@ -567,9 +557,6 @@ class TestDocumentDetail:
         assert len(detail.citations) == 1
         assert detail.citations[0].text == "Цитата текста"
         assert detail.citations[0].section == ["Раздел I", "Глава 2", "Статья 10"]
-        assert len(detail.toc) == 1
-        assert detail.toc[0].title == "Раздел 1"
-        assert detail.toc[0].level == 0
 
     def test_serialize_roundtrip(self) -> None:
         now = datetime.now(timezone.utc)
@@ -586,7 +573,6 @@ class TestDocumentDetail:
         assert d["title"] == "Test"
         assert d["legal_status"] == "unknown"
         assert d["citations"] == []
-        assert d["toc"] == []
 
     def test_empty_id_rejected(self) -> None:
         now = datetime.now(timezone.utc)

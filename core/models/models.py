@@ -396,12 +396,6 @@ class DocumentDetail(BaseModel):
         "Каждая цитата содержит текст, ссылку на источник и путь к разделу. "
         "Агент использует их для точного provenance в ответе пользователю.",
     )
-    toc: list[TocNode] = Field(
-        default_factory=list,
-        description="Оглавление документа. "
-        "Позволяет агенту навигироваться по структуре документа "
-        "без дополнительного вызова get_toc().",
-    )
 
 
 class TopicNode(BaseModel):

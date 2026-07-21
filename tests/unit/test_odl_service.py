@@ -335,7 +335,6 @@ class TestGetDocumentDetail:
     async def test_citations_and_toc_are_present(self, service: ODLService) -> None:
         detail = await service.get_document_detail("doc-1")
         assert isinstance(detail.citations, list)
-        assert isinstance(detail.toc, list)
 
     async def test_citations_are_citation_instances(
         self,
@@ -345,28 +344,6 @@ class TestGetDocumentDetail:
         assert len(detail.citations) > 0
         for c in detail.citations:
             assert isinstance(c, Citation)
-
-    async def test_toc_is_list_of_toc_nodes(
-        self,
-        service: ODLService,
-    ) -> None:
-        detail = await service.get_document_detail("doc-1")
-        assert len(detail.toc) > 0
-        for node in detail.toc:
-            assert isinstance(node, TocNode)
-
-    async def test_toc_nodes_have_correct_types(
-        self,
-        service: ODLService,
-    ) -> None:
-        detail = await service.get_document_detail("doc-1")
-        for node in detail.toc:
-            assert isinstance(node.id, str)
-            assert isinstance(node.document_id, str)
-            assert isinstance(node.title, str)
-            assert isinstance(node.parent_id, str)
-            assert isinstance(node.level, int)
-            assert isinstance(node.child_count, int)
 
     async def test_unknown_document_raises(self, service: ODLService) -> None:
         with pytest.raises(NotFoundError):
@@ -484,8 +461,6 @@ class TestGetDocumentDetailWithQdrant:
         assert detail.title, "title must be non-empty"
         assert detail.url, "url must be non-empty"
         assert detail.source_name, "source_name must be non-empty"
-        assert isinstance(detail.toc, list)
-        assert len(detail.toc) > 0
 
     async def test_get_chunks_by_document_id_called(
         self,
