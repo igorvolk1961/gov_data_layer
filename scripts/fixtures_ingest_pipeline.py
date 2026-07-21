@@ -30,7 +30,15 @@ from core.persistence.repository import ReferenceRepository
 load_dotenv()
 
 FIXTURES_DIR = Path("fixtures")
-PUBLISH_IDS = ["0001202012230060"]  # Demo: 1 document (all rubrics load)
+# All 6 OCR fixture files available in fixtures/ocr_results/
+PUBLISH_IDS = [
+    "0001202012230060",  # 95465 chars
+    "0001202206200030",  # 12280 chars
+    "0001202212190143",  # 117048 chars
+    "0001202606090026",  # 2938 chars
+    "0001202607060006",  # 128005 chars
+    "7800202607010012",  # 2753 chars
+]
 
 
 async def main() -> None:
