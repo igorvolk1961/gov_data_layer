@@ -6,8 +6,6 @@ Swagger UI автоматически доступен на /docs.
 Эндпоинты:
 - POST /api/v1/search — поиск документов
 - GET  /api/v1/documents/{source_id} — полная карточка документа
-- GET  /api/v1/topics — иерархический рубрикатор
-- GET  /api/v1/documents/{document_id}/toc — оглавление документа
 - GET  /health — healthcheck
 """
 
@@ -257,64 +255,6 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(e)) from None
 
     # ------------------------------------------------------------------
-    # Topics (rubricator)
-    # ------------------------------------------------------------------
-    @app.get("/api/v1/topics")
-    async def list_topics(
-        parent_id: str | None = None,
-        query: str = "",
-    ) -> JSONResponse:
-        """Просмотр иерархического рубрикатора.
-
-        Args:
-            parent_id: ID родительской рубрики. None = корневые рубрики.
-            query: Опциональный поисковый запрос для фильтрации рубрик.
-
-        Returns:
-            Список узлов рубрикатора.
-        """
-        try:
-            topics = await service.list_topics(parent_id=parent_id, query=query)
-            return JSONResponse(
-                content=[t.model_dump(mode="json") for t in topics],
-            )
-        except NotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from None
-        except SourceUnavailableError as e:
-            raise HTTPException(status_code=503, detail=str(e)) from None
-
-    # ------------------------------------------------------------------
-    # Table of contents
-    # ------------------------------------------------------------------
-    @app.get("/api/v1/documents/{document_id}/toc")
-    async def get_toc(
-        document_id: str,
-        parent_section_id: str | None = None,
-        query: str = "",
-    ) -> JSONResponse:
-        """Получить оглавление документа.
-
-        Args:
-            document_id: ID документа.
-            parent_section_id: ID родительского раздела. None = корневые разделы.
-            query: Опциональный поисковый запрос для фильтрации разделов.
-
-        Returns:
-            Список узлов оглавления.
-        """
-        try:
-            toc = await service.get_toc(
-                document_id=document_id,
-                parent_section_id=parent_section_id,
-                query=query,
-            )
-            return JSONResponse(
-                content=[t.model_dump(mode="json") for t in toc],
-            )
-        except NotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from None
-
-    # ------------------------------------------------------------------
     # Admin / Verification endpoints
     # ------------------------------------------------------------------
     @app.get("/api/v1/admin/reference-counts")
@@ -327,12 +267,6 @@ def create_app(
     async def admin_qdrant_status() -> JSONResponse:
         """Get Qdrant collections status."""
         status = await service.admin_get_qdrant_status()
-        return JSONResponse(content=status.model_dump(mode="json"))
-
-    @app.get("/api/v1/admin/documents/{publish_id}/status")
-    async def admin_document_status(publish_id: str) -> JSONResponse:
-        """Get full status of a document."""
-        status = await service.admin_get_document_status(publish_id)
         return JSONResponse(content=status.model_dump(mode="json"))
 
     return app

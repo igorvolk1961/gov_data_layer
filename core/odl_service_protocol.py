@@ -16,8 +16,6 @@ from core.models.models import (
     DocumentDetail,
     SearchContext,
     SearchResponse,
-    TocNode,
-    TopicNode,
 )
 
 
@@ -117,46 +115,6 @@ class ODLServiceProtocol(Protocol):
         """
         ...
 
-    async def list_topics(
-        self,
-        parent_id: str | None = None,
-        query: str = "",
-    ) -> list[TopicNode]:
-        """Просмотр иерархического рубрикатора.
-
-        Args:
-            parent_id: ID родительской рубрики. None = корневые рубрики.
-            query: Опциональный поисковый запрос для фильтрации рубрик.
-
-        Returns:
-            Список узлов рубрикатора.
-
-        Raises:
-            NotFoundError: Рубрика не найдена.
-        """
-        ...
-
-    async def get_toc(
-        self,
-        document_id: str,
-        parent_section_id: str | None = None,
-        query: str = "",
-    ) -> list[TocNode]:
-        """Получить оглавление документа.
-
-        Args:
-            document_id: ID документа.
-            parent_section_id: ID родительского раздела. None = корневые разделы.
-            query: Опциональный поисковый запрос для фильтрации разделов.
-
-        Returns:
-            Список узлов оглавления.
-
-        Raises:
-            NotFoundError: Документ или раздел не найден.
-        """
-        ...
-
     # ── Admin / Verification Methods ──────────────────────────────────
 
     async def admin_get_reference_counts(self) -> ReferenceCounts:
@@ -165,10 +123,6 @@ class ODLServiceProtocol(Protocol):
 
     async def admin_get_qdrant_status(self) -> AdminQdrantStatus:
         """Get Qdrant collections status for verification."""
-        ...
-
-    async def admin_get_document_status(self, publish_id: str) -> DocumentStatus:
-        """Get full status of a document across DB and Qdrant."""
         ...
 
 

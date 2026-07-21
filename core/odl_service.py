@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -34,13 +33,11 @@ from core.models.models import (
     SearchResult,
     SourceAvailability,
     TocNode,
-    TopicNode,
 )
 from core.observability import get_logger, get_tracer
 from core.observability.tracer import Tracer
 from core.odl_service_protocol import (
     AdminQdrantStatus,
-    DocumentStatus,
     ODLServiceProtocol,
     QdrantCollectionInfo,
     ReferenceCounts,
@@ -797,116 +794,6 @@ class ODLService(ODLServiceProtocol):
 
         return result
 
-    async def list_topics(
-        self,
-        parent_id: str | None = None,
-        query: str = "",
-    ) -> list[TopicNode]:
-        """Просмотр рубрикатора из PostgreSQL.
-
-        Результаты кэшируются в Redis на 1 час (cache-aside).
-        """
-        # --- Cache-aside: check cache first ---
-        cache_key = self._cache_key("topics", str(parent_id), query)
-        if self._cache is not None:
-            try:
-                cached = await self._cache.get(cache_key)
-                if cached is not None:
-                    return [TopicNode.model_validate(t) for t in json.loads(cached)]
-            except Exception:
-                logger.warning("Cache lookup failed for topics — falling through", exc_info=True)
-
-        with self.tracer.trace("list_topics", parent_id=str(parent_id)) as span:
-            span.set_input({"parent_id": parent_id, "query": query})
-            ref_repo = self._ref_repo_lazy
-            if ref_repo is None:
-                span.set_output({"count": 0, "reason": "no_database"})
-                return []
-            try:
-                topics = await ref_repo.list_topics(parent_id=parent_id, query=query)  # type: ignore[attr-defined]
-
-                # --- Cache-aside: populate cache ---
-                if self._cache is not None:
-                    try:
-                        await self._cache.set(
-                            cache_key,
-                            json.dumps([t.model_dump(mode="json") for t in topics]),
-                            ttl=timedelta(hours=1),
-                        )
-                    except Exception:
-                        logger.warning("Failed to cache topics list", exc_info=True)
-
-                span.set_output({"count": len(topics)})
-                return topics  # type: ignore[no-any-return]
-            except Exception:
-                logger.exception("Failed to list topics")
-                span.set_output({"count": 0, "error": "db_error"})
-                return []
-
-    async def get_toc(
-        self,
-        document_id: str,
-        parent_section_id: str | None = None,
-        query: str = "",
-    ) -> list[TocNode]:
-        """Оглавление документа из PostgreSQL.
-
-        Результаты кэшируются в Redis на 1 час (cache-aside).
-        """
-        # --- Cache-aside: check cache first ---
-        cache_key = self._cache_key("toc", document_id, str(parent_section_id), query)
-        if self._cache is not None:
-            try:
-                cached = await self._cache.get(cache_key)
-                if cached is not None:
-                    return [TocNode.model_validate(t) for t in json.loads(cached)]
-            except Exception:
-                logger.warning("Cache lookup failed for TOC — falling through", exc_info=True)
-
-        with self.tracer.trace("get_toc", document_id=document_id) as span:
-            span.set_input(
-                {
-                    "document_id": document_id,
-                    "parent_section_id": parent_section_id,
-                    "query": query,
-                }
-            )
-            section_repo = self._section_repo_lazy
-            if section_repo is None:
-                span.set_output({"count": 0, "reason": "no_database"})
-                return []
-
-            # Check document existence
-            doc_repo = self._doc_repo_lazy
-            if doc_repo is not None:
-                doc = await doc_repo.get_document_by_id(document_id)
-                if doc is None:
-                    raise NotFoundError(f"Document {document_id} not found")
-
-            try:
-                result = await section_repo.get_toc(  # type: ignore[attr-defined]
-                    document_uuid=document_id,
-                    parent_section_id=parent_section_id,
-                )
-
-                # --- Cache-aside: populate cache ---
-                if self._cache is not None:
-                    try:
-                        await self._cache.set(
-                            cache_key,
-                            json.dumps([t.model_dump(mode="json") for t in result]),
-                            ttl=timedelta(hours=1),
-                        )
-                    except Exception:
-                        logger.warning("Failed to cache TOC", exc_info=True)
-
-                span.set_output({"count": len(result)})
-                return result  # type: ignore[no-any-return]
-            except Exception:
-                logger.exception("Failed to get TOC for document %s", document_id)
-                span.set_output({"count": 0, "error": "db_error"})
-                return []
-
     async def _check_missing_region(
         self,
         ctx: SearchContext,
@@ -980,39 +867,6 @@ class ODLService(ODLServiceProtocol):
             status.topics = QdrantCollectionInfo(exists=True, count=topic_count)
         except Exception:
             logger.warning("Failed to count topics collection")
-
-        return status
-
-    async def admin_get_document_status(self, publish_id: str) -> DocumentStatus:
-        """Get full status of a document across DB and Qdrant."""
-        status = DocumentStatus(publish_id=publish_id)
-
-        if self._db is not None:
-            try:
-                await self._db.connect()
-                row = await self._db.fetchrow(
-                    """
-                    SELECT d.id as doc_uuid,
-                           (SELECT COUNT(*) FROM document_section WHERE document_id = d.id) as section_count
-                    FROM data_source ds
-                    JOIN document d ON d.source_id = ds.id
-                    WHERE d.publish_id = $1
-                    """,
-                    publish_id,
-                )
-                if row:
-                    status.in_postgres = True
-                    status.doc_uuid = str(row["doc_uuid"])
-                    status.section_count = row["section_count"] or 0
-            except Exception:
-                logger.exception("Failed to get document status from DB")
-
-        if self._qdrant is not None and status.doc_uuid:
-            try:
-                chunks = await self._qdrant.get_chunks_by_document_id(f"pravo-{publish_id}")
-                status.chunk_count = len(chunks)
-            except Exception:
-                logger.warning("Failed to get chunk count from Qdrant")
 
         return status
 

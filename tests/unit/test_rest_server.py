@@ -29,8 +29,6 @@ from core.models.models import (
     SearchResponse,
     SearchResult,
     SourceAvailability,
-    TocNode,
-    TopicNode,
 )
 from core.observability.config import ObservabilityConfig
 from core.observability.tracer import FileFallbackTracer, set_tracer
@@ -120,8 +118,6 @@ class TestCreateApp:
         assert "/health" in paths
         assert "/api/v1/search" in paths
         assert "/api/v1/documents/{source_id}" in paths
-        assert "/api/v1/topics" in paths
-        assert "/api/v1/documents/{document_id}/toc" in paths
 
 
 # ──────────────────────────────────────────────
@@ -288,77 +284,6 @@ class TestGetDocumentDetail:
 
 
 # ──────────────────────────────────────────────
-#  GET /api/v1/topics
-# ──────────────────────────────────────────────
-
-
-class TestListTopics:
-    def test_success(self, client: TestClient, mock_service: MagicMock) -> None:
-        mock_service.list_topics.return_value = [
-            TopicNode(id="t1", name="Topic 1", parent_id=""),
-            TopicNode(id="t2", name="Topic 2", parent_id="t1"),
-        ]
-        resp = client.get("/api/v1/topics")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 2
-        assert data[0]["id"] == "t1"
-
-    def test_with_parent_id(self, client: TestClient, mock_service: MagicMock) -> None:
-        mock_service.list_topics.return_value = []
-        client.get("/api/v1/topics", params={"parent_id": "t1"})
-        mock_service.list_topics.assert_awaited_with(parent_id="t1", query="")
-
-    def test_with_query(self, client: TestClient, mock_service: MagicMock) -> None:
-        mock_service.list_topics.return_value = []
-        client.get("/api/v1/topics", params={"query": "law"})
-        mock_service.list_topics.assert_awaited_with(parent_id=None, query="law")
-
-    def test_not_found_returns_404(self, client: TestClient, mock_service: MagicMock) -> None:
-        mock_service.list_topics.side_effect = NotFoundError("not found")
-        resp = client.get("/api/v1/topics", params={"parent_id": "invalid"})
-        assert resp.status_code == 404
-
-
-# ──────────────────────────────────────────────
-#  GET /api/v1/documents/{document_id}/toc
-# ──────────────────────────────────────────────
-
-
-class TestGetToc:
-    def test_success(self, client: TestClient, mock_service: MagicMock) -> None:
-        mock_service.get_toc.return_value = [
-            TocNode(
-                id="s1",
-                document_id="doc-1",
-                title="Section 1",
-                parent_id="",
-                level=1,
-            ),
-        ]
-        resp = client.get("/api/v1/documents/doc-1/toc")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-        assert data[0]["id"] == "s1"
-
-    def test_with_parent_section(self, client: TestClient, mock_service: MagicMock) -> None:
-        mock_service.get_toc.return_value = []
-        client.get(
-            "/api/v1/documents/doc-1/toc",
-            params={"parent_section_id": "s1"},
-        )
-        mock_service.get_toc.assert_awaited_with(
-            document_id="doc-1", parent_section_id="s1", query=""
-        )
-
-    def test_not_found_returns_404(self, client: TestClient, mock_service: MagicMock) -> None:
-        mock_service.get_toc.side_effect = NotFoundError("not found")
-        resp = client.get("/api/v1/documents/unknown/toc")
-        assert resp.status_code == 404
-
-
-# ──────────────────────────────────────────────
 #  Tracing middleware
 # ──────────────────────────────────────────────
 
@@ -424,23 +349,3 @@ class TestAdminQdrantStatus:
         assert data["documents"]["count"] == 42
         assert data["topics"]["exists"] is True
         assert data["topics"]["count"] == 5
-
-
-class TestAdminDocumentStatus:
-    def test_returns_status(self, client: TestClient, mock_service: MagicMock) -> None:
-        from core.odl_service_protocol import DocumentStatus
-
-        mock_service.admin_get_document_status.return_value = DocumentStatus(
-            publish_id="0001202012230060",
-            in_postgres=True,
-            doc_uuid="some-uuid",
-            chunk_count=10,
-            section_count=5,
-            rubric_count=2,
-        )
-        resp = client.get("/api/v1/admin/documents/0001202012230060/status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["in_postgres"] is True
-        assert data["chunk_count"] == 10
-        assert data["section_count"] == 5

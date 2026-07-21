@@ -6,8 +6,6 @@ Each tool is a thin wrapper around an ODLServiceProtocol method.
 Tools:
 - search_documents — search documents by query
 - get_document_detail — full document card
-- list_topics — hierarchical rubricator
-- get_toc — document table of contents
 """
 
 from __future__ import annotations
@@ -156,78 +154,6 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
                 max_citation_length=max_citation_length,
             )
             return detail.model_dump(mode="json")
-        except NotFoundError as e:
-            return _error_response(str(e), "NOT_FOUND")
-        except SourceUnavailableError as e:
-            return _error_response(str(e), "SOURCE_UNAVAILABLE")
-
-    # ------------------------------------------------------------------
-    # list_topics
-    # ------------------------------------------------------------------
-    @mcp.tool(
-        name="list_topics",
-        description=(
-            "Browse the hierarchical rubricator. "
-            "Calling without parent_id returns root rubrics. "
-            "Can be filtered by text query."
-        ),
-    )
-    async def list_topics(
-        parent_id: str | None = None,
-        query: str = "",
-    ) -> dict[str, Any]:
-        """Browse the rubricator.
-
-        Args:
-            parent_id: Parent rubric ID. None = root rubrics.
-            query: Optional search query to filter rubrics.
-
-        Returns:
-            Dict with "results" key containing list of TopicNode as dict (mode="json"),
-            or an error dict on failure.
-        """
-        try:
-            topics = await service.list_topics(parent_id=parent_id, query=query)
-            return {"results": [t.model_dump(mode="json") for t in topics]}
-        except NotFoundError as e:
-            return _error_response(str(e), "NOT_FOUND")
-        except SourceUnavailableError as e:
-            return _error_response(str(e), "SOURCE_UNAVAILABLE")
-
-    # ------------------------------------------------------------------
-    # get_toc
-    # ------------------------------------------------------------------
-    @mcp.tool(
-        name="get_toc",
-        description=(
-            "Get the table of contents of a document. "
-            "Calling without parent_section_id returns root sections. "
-            "Can be filtered by text query."
-        ),
-    )
-    async def get_toc(
-        document_id: str,
-        parent_section_id: str | None = None,
-        query: str = "",
-    ) -> dict[str, Any]:
-        """Document table of contents.
-
-        Args:
-            document_id: Document ID.
-            parent_section_id: Parent section ID. None = root sections.
-            query: Optional search query to filter sections.
-
-        Returns:
-            Dict with "results" key containing list of TocNode as dict (mode="json"),
-            or an error dict on failure.
-        """
-        try:
-            toc = await service.get_toc(
-                document_id=document_id,
-                parent_section_id=parent_section_id,
-                query=query,
-            )
-            return {"results": [t.model_dump(mode="json") for t in toc]}
         except NotFoundError as e:
             return _error_response(str(e), "NOT_FOUND")
         except SourceUnavailableError as e:

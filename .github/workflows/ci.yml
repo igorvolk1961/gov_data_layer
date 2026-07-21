@@ -137,7 +137,8 @@ jobs:
             core/persistence/migrations/v001/005_create_rubric_table.sql \
             core/persistence/migrations/v001/006_create_document_rubric.sql \
             core/persistence/migrations/v001/007_rename_external_id_to_publish_id.sql \
-            core/persistence/migrations/v001/008_rename_document_columns.sql; do
+            core/persistence/migrations/v001/008_rename_document_columns.sql \
+            core/persistence/migrations/v004/000_add_organization_jurisdiction_region.sql; do
             echo "Applying $f..."
             psql -h localhost -p 5432 -U odl -d odl_metadata -f "$f"
           done
