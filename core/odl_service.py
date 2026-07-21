@@ -327,6 +327,7 @@ class ODLService(ODLServiceProtocol):
                         limit=max_results + offset,
                         context=ctx,
                         topic_ids=_topic_filter,
+                        parent_span=qspan,
                     )
                     qspan.set_output({"hits": len(qdrant_chunks)})
 

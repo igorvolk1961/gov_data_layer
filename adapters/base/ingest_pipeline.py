@@ -15,10 +15,7 @@ run in thread pool executors to avoid blocking the event loop.
 from __future__ import annotations
 
 import contextlib
-import logging
 from typing import TYPE_CHECKING, Any
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from core.analyzer.section_analyzer import SectionFact
@@ -104,7 +101,9 @@ async def process_document_text(
         # 1. Chunk + TOC
         child = _child("pipeline.chunk")
         with child:
-            chunks, toc = await chunker.split_text(text, document_id, doc_uuid, section_uuids)
+            chunks, toc = await chunker.split_text(
+                text, document_id, doc_uuid, section_uuids, parent_span=child
+            )
             if not chunks:
                 child = _child("pipeline.no_chunks")
                 with child:
@@ -134,14 +133,7 @@ async def process_document_text(
                 except Exception as exc:
                     child.set_error(exc)
                     child.set_output({"error": str(exc)[:200]})
-                    import traceback as _tb
-
-                    logger.error(
-                        "Section persistence failed for doc %s: %s\n%s",
-                        doc_uuid,
-                        exc,
-                        _tb.format_exc(),
-                    )
+                    # Error already recorded via child.set_error(exc) above
 
         # 3. Semantic analysis + persistence of legal facts
         if resolved_section_uuids and doc_uuid and section_repo is not None:

@@ -11,16 +11,13 @@ ChunkingOrchestrator использует spaCy (CPU-bound), поэтому proc
 from __future__ import annotations
 
 import asyncio
-import logging
+import contextlib
 import uuid
 from typing import Any
 
 from smart_chunker import ChunkingOrchestrator as _ChunkingOrchestrator
 
 from core.models.models import DocumentChunk, TocNode
-
-logger = logging.getLogger(__name__)
-
 
 # ── DocStructSplitter — основной класс ────────────────────────────────
 
@@ -39,15 +36,16 @@ class DocStructSplitter:
         self._chunk_overlap = chunk_overlap
         self._orch: _ChunkingOrchestrator | None = None
 
-    async def _ensure_chunker(self) -> None:
+    async def _ensure_chunker(self, parent_span: Any = None) -> None:
         """Lazy-init ChunkingOrchestrator (лёгкая операция, без блокировок)."""
         if self._orch is not None:
             return
-        logger.info(
-            "Initializing ChunkingOrchestrator (max_chunk_size=%d, overlap=%d)",
-            self._max_chunk_size,
-            self._chunk_overlap,
-        )
+        if parent_span is not None:
+            with contextlib.suppress(Exception):
+                _s = parent_span.span("chunker.init", max_chunk_size=self._max_chunk_size)
+                _s.__enter__()
+                _s._data.level = "INFO"
+                _s.__exit__(None, None, None)
         self._orch = _ChunkingOrchestrator(
             config={
                 "max_chunk_size": self._max_chunk_size,
@@ -62,6 +60,7 @@ class DocStructSplitter:
         document_id: str,
         doc_uuid: str,
         section_uuids: dict[str, str] | None = None,
+        parent_span: Any = None,
     ) -> tuple[list[DocumentChunk], list[TocNode]]:
         """Split document text into chunks and extract TOC.
 
@@ -79,7 +78,9 @@ class DocStructSplitter:
         if not text:
             return [], []
 
-        return await self._split_with_smart_chunker(text, document_id, doc_uuid, section_uuids)
+        return await self._split_with_smart_chunker(
+            text, document_id, doc_uuid, section_uuids, parent_span
+        )
 
     async def _split_with_smart_chunker(
         self,
@@ -87,9 +88,10 @@ class DocStructSplitter:
         document_id: str,
         doc_uuid: str,
         section_uuids: dict[str, str] | None,
+        parent_span: Any = None,
     ) -> tuple[list[DocumentChunk], list[TocNode]]:
         """Split using ChunkingOrchestrator (blocking — runs in thread pool)."""
-        await self._ensure_chunker()
+        await self._ensure_chunker(parent_span)
         assert self._orch is not None
 
         loop = asyncio.get_event_loop()

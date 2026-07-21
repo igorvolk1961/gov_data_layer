@@ -7,14 +7,12 @@ Supports upsert and hybrid search with payload filters.
 from __future__ import annotations
 
 import contextlib
-import logging
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any
 
 from core.models.models import DocumentChunk, SearchContext, TopicPoint
-
-logger = logging.getLogger(__name__)
+from core.observability import get_tracer
 
 
 def _date_to_timestamp(d: date) -> float:
@@ -29,7 +27,11 @@ try:
 
     _HAS_QDRANT = True
 except ImportError:
-    logger.warning("qdrant-client not installed — QdrantStore will use stub")
+    with contextlib.suppress(Exception):
+        _s = get_tracer().trace("qdrant.client_missing")
+        _s.__enter__()
+        _s._data.level = "WARN"
+        _s.__exit__(None, None, None)
 
 
 class QdrantStore:
@@ -77,7 +79,7 @@ class QdrantStore:
             self._client = _QdrantClient(host=self._host, port=self._port)
         return self._client
 
-    async def ensure_collection(self) -> None:
+    async def ensure_collection(self, parent_span: Any = None) -> None:
         """Create collection if it doesn't exist.
 
         If collection exists but with a different vector_size (e.g. after
@@ -86,7 +88,12 @@ class QdrantStore:
         """
         client = await self._get_client()
         if client is None:
-            logger.warning("Qdrant not available — skipping collection creation")
+            if parent_span is not None:
+                with contextlib.suppress(Exception):
+                    _s = parent_span.span("qdrant.ensure_collection.skip")
+                    _s.__enter__()
+                    _s._data.level = "WARN"
+                    _s.__exit__(None, None, None)
             return
 
         collections = client.get_collections().collections
@@ -97,21 +104,41 @@ class QdrantStore:
             info = client.get_collection(self._collection)
             actual_size = info.config.params.vectors.size
             if actual_size != self._vector_size:
-                logger.warning(
-                    "Collection '%s' has vector_size=%d, expected %d — recreating",
-                    self._collection,
-                    actual_size,
-                    self._vector_size,
-                )
+                if parent_span is not None:
+                    with contextlib.suppress(Exception):
+                        _s = parent_span.span(
+                            "qdrant.recreate_collection",
+                            collection=self._collection,
+                            actual=str(actual_size),
+                            expected=str(self._vector_size),
+                        )
+                        _s.__enter__()
+                        _s._data.level = "WARN"
+                        _s.__exit__(None, None, None)
                 client.delete_collection(self._collection)
                 # Fall through to create_collection below
             else:
-                logger.info("Collection '%s' already exists", self._collection)
+                if parent_span is not None:
+                    with contextlib.suppress(Exception):
+                        _s = parent_span.span(
+                            "qdrant.collection_exists",
+                            collection=self._collection,
+                        )
+                        _s.__enter__()
+                        _s._data.level = "INFO"
+                        _s.__exit__(None, None, None)
                 return
 
-        logger.info(
-            "Creating collection '%s' (vector_size=%d)", self._collection, self._vector_size
-        )
+        if parent_span is not None:
+            with contextlib.suppress(Exception):
+                _s = parent_span.span(
+                    "qdrant.create_collection",
+                    collection=self._collection,
+                    vector_size=str(self._vector_size),
+                )
+                _s.__enter__()
+                _s._data.level = "INFO"
+                _s.__exit__(None, None, None)
         client.create_collection(
             collection_name=self._collection,
             vectors_config=_qdrant_models.VectorParams(
@@ -146,7 +173,11 @@ class QdrantStore:
             field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
         )
 
-    async def upsert_chunks(self, chunks: list[DocumentChunk]) -> None:
+    async def upsert_chunks(
+        self,
+        chunks: list[DocumentChunk],
+        parent_span: Any = None,
+    ) -> None:
         """Insert or update chunks with embeddings and payload.
 
         Args:
@@ -157,13 +188,23 @@ class QdrantStore:
 
         client = await self._get_client()
         if client is None:
-            logger.warning("Qdrant not available — skipping upsert of %d chunks", len(chunks))
+            if parent_span is not None:
+                with contextlib.suppress(Exception):
+                    _s = parent_span.span("qdrant.upsert.skip", count=str(len(chunks)))
+                    _s.__enter__()
+                    _s._data.level = "WARN"
+                    _s.__exit__(None, None, None)
             return
 
         points: list[Any] = []
         for chunk in chunks:
             if chunk.embedding is None:
-                logger.warning("Chunk %s has no embedding — skipping", chunk.id)
+                if parent_span is not None:
+                    with contextlib.suppress(Exception):
+                        _s = parent_span.span("qdrant.upsert.skip_no_embedding", chunk_id=chunk.id)
+                        _s.__enter__()
+                        _s._data.level = "WARN"
+                        _s.__exit__(None, None, None)
                 continue
 
             payload: dict[str, Any] = {
@@ -200,12 +241,21 @@ class QdrantStore:
         if not points:
             return
 
-        await self.ensure_collection()
+        await self.ensure_collection(parent_span)
         client.upsert(
             collection_name=self._collection,
             points=points,
         )
-        logger.info("Upserted %d chunks to collection '%s'", len(points), self._collection)
+        if parent_span is not None:
+            with contextlib.suppress(Exception):
+                _s = parent_span.span(
+                    "qdrant.upsert.success",
+                    count=str(len(points)),
+                    collection=self._collection,
+                )
+                _s.__enter__()
+                _s._data.level = "INFO"
+                _s.__exit__(None, None, None)
 
     async def build_filter(
         self,
@@ -267,6 +317,7 @@ class QdrantStore:
         self,
         section_uuids: list[str],
         effective_date: date,
+        parent_span: Any = None,
     ) -> int:
         """Set not_actual_since on all chunks belonging to given sections.
 
@@ -321,11 +372,16 @@ class QdrantStore:
             payload={"not_actual_since": _date_to_timestamp(effective_date)},
             points=point_ids,
         )
-        logger.info(
-            "Deactivated %d chunks (not_actual_since=%s)",
-            len(point_ids),
-            effective_date.isoformat(),
-        )
+        if parent_span is not None:
+            with contextlib.suppress(Exception):
+                _s = parent_span.span(
+                    "qdrant.deactivate_sections",
+                    count=str(len(point_ids)),
+                    effective=effective_date.isoformat(),
+                )
+                _s.__enter__()
+                _s._data.level = "INFO"
+                _s.__exit__(None, None, None)
         return len(point_ids)
 
     async def search(
@@ -335,6 +391,7 @@ class QdrantStore:
         limit: int = 10,
         context: SearchContext | None = None,
         topic_ids: list[str] | None = None,
+        parent_span: Any = None,
     ) -> list[tuple[DocumentChunk, float]]:
         """Semantic search with payload filtering (Metadata Routing).
 
@@ -354,7 +411,12 @@ class QdrantStore:
         """
         client = await self._get_client()
         if client is None:
-            logger.warning("Qdrant not available — returning empty search results")
+            if parent_span is not None:
+                with contextlib.suppress(Exception):
+                    _s = parent_span.span("qdrant.search.skip")
+                    _s.__enter__()
+                    _s._data.level = "WARN"
+                    _s.__exit__(None, None, None)
             return []
 
         # Build filter from explicit filters + SearchContext (Metadata Routing)
@@ -501,7 +563,11 @@ class QdrantStore:
         chunks.sort(key=lambda c: ("|".join(c.section_path), c.section_chunk_index))
         return chunks
 
-    async def delete_document_chunks(self, document_id: str) -> None:
+    async def delete_document_chunks(
+        self,
+        document_id: str,
+        parent_span: Any = None,
+    ) -> None:
         """Delete all chunks for a given document.
 
         Args:
@@ -524,7 +590,12 @@ class QdrantStore:
                 ),
             ),
         )
-        logger.info("Deleted chunks for document '%s'", document_id)
+        if parent_span is not None:
+            with contextlib.suppress(Exception):
+                _s = parent_span.span("qdrant.delete_chunks", document_id=document_id)
+                _s.__enter__()
+                _s._data.level = "INFO"
+                _s.__exit__(None, None, None)
 
     async def count(self) -> int:
         """Get total number of chunks in the collection."""
@@ -534,7 +605,7 @@ class QdrantStore:
         result = client.count(collection_name=self._collection)
         return result.count  # type: ignore[no-any-return]
 
-    async def check_health(self) -> bool:
+    async def check_health(self, parent_span: Any = None) -> bool:
         """Check Qdrant connectivity by listing collections.
 
         Returns:
@@ -547,29 +618,49 @@ class QdrantStore:
             client.get_collections()
             return True
         except Exception:
-            logger.warning("Qdrant health check failed")
+            if parent_span is not None:
+                with contextlib.suppress(Exception):
+                    _s = parent_span.span("qdrant.health_check_failed")
+                    _s.__enter__()
+                    _s._data.level = "WARN"
+                    _s.__exit__(None, None, None)
             return False
 
     # ── Topic Collection ─────────────────────────────────────────────
 
-    async def ensure_topic_collection(self) -> None:
+    async def ensure_topic_collection(self, parent_span: Any = None) -> None:
         """Create the 'topics' collection if it doesn't exist.
 
         Uses the same vector_size as the documents collection.
         """
         client = await self._get_client()
         if client is None:
-            logger.warning("Qdrant not available — skipping topic collection creation")
+            if parent_span is not None:
+                with contextlib.suppress(Exception):
+                    _s = parent_span.span("qdrant.ensure_topics.skip")
+                    _s.__enter__()
+                    _s._data.level = "WARN"
+                    _s.__exit__(None, None, None)
             return
 
         collections = client.get_collections().collections
         existing = {c.name for c in collections}
 
         if "topics" in existing:
-            logger.info("Topic collection already exists")
+            if parent_span is not None:
+                with contextlib.suppress(Exception):
+                    _s = parent_span.span("qdrant.topics_exists")
+                    _s.__enter__()
+                    _s._data.level = "INFO"
+                    _s.__exit__(None, None, None)
             return
 
-        logger.info("Creating 'topics' collection (vector_size=%d)", self._vector_size)
+        if parent_span is not None:
+            with contextlib.suppress(Exception):
+                _s = parent_span.span("qdrant.create_topics", vector_size=str(self._vector_size))
+                _s.__enter__()
+                _s._data.level = "INFO"
+                _s.__exit__(None, None, None)
         client.create_collection(
             collection_name="topics",
             vectors_config=_qdrant_models.VectorParams(
@@ -587,6 +678,7 @@ class QdrantStore:
     async def upsert_topic_vectors(
         self,
         topics: list[TopicPoint],
+        parent_span: Any = None,
     ) -> None:
         """Upsert topic vectors into the 'topics' collection.
 
@@ -598,15 +690,27 @@ class QdrantStore:
 
         client = await self._get_client()
         if client is None:
-            logger.warning("Qdrant not available — skipping topic upsert")
+            if parent_span is not None:
+                with contextlib.suppress(Exception):
+                    _s = parent_span.span("qdrant.upsert_topics.skip")
+                    _s.__enter__()
+                    _s._data.level = "WARN"
+                    _s.__exit__(None, None, None)
             return
 
-        await self.ensure_topic_collection()
+        await self.ensure_topic_collection(parent_span)
 
         points: list[Any] = []
         for topic in topics:
             if topic.embedding is None:
-                logger.warning("Topic %s has no embedding — skipping", topic.id)
+                if parent_span is not None:
+                    with contextlib.suppress(Exception):
+                        _s = parent_span.span(
+                            "qdrant.upsert_topics.no_embedding", topic_id=topic.id
+                        )
+                        _s.__enter__()
+                        _s._data.level = "WARN"
+                        _s.__exit__(None, None, None)
                 continue
             payload: dict[str, Any] = {
                 "topic_id": topic.topic_id,
@@ -629,9 +733,17 @@ class QdrantStore:
             collection_name="topics",
             points=points,
         )
-        logger.info("Upserted %d topic vectors to 'topics' collection", len(points))
+        if parent_span is not None:
+            with contextlib.suppress(Exception):
+                _s = parent_span.span(
+                    "qdrant.upsert_topics.success",
+                    count=str(len(points)),
+                )
+                _s.__enter__()
+                _s._data.level = "INFO"
+                _s.__exit__(None, None, None)
 
-    async def delete_topic_collection(self) -> None:
+    async def delete_topic_collection(self, parent_span: Any = None) -> None:
         """Delete the 'topics' collection (for cleanup/reload)."""
         client = await self._get_client()
         if client is None:
@@ -642,7 +754,12 @@ class QdrantStore:
 
         if "topics" in existing:
             client.delete_collection("topics")
-            logger.info("Deleted 'topics' collection")
+            if parent_span is not None:
+                with contextlib.suppress(Exception):
+                    _s = parent_span.span("qdrant.delete_topics")
+                    _s.__enter__()
+                    _s._data.level = "INFO"
+                    _s.__exit__(None, None, None)
 
     async def count_topics(self) -> int:
         """Get total number of topic vectors in the topics collection."""
@@ -694,7 +811,7 @@ class QdrantStore:
             )
         return results
 
-    async def delete_all_collections(self) -> None:
+    async def delete_all_collections(self, parent_span: Any = None) -> None:
         """Delete both 'documents' and 'topics' collections (full cleanup)."""
         client = await self._get_client()
         if client is None:
@@ -703,7 +820,12 @@ class QdrantStore:
         for c in collections:
             if c.name in ("documents", "topics"):
                 client.delete_collection(c.name)
-                logger.info("Deleted collection '%s'", c.name)
+                if parent_span is not None:
+                    with contextlib.suppress(Exception):
+                        _s = parent_span.span("qdrant.delete_collection", name=c.name)
+                        _s.__enter__()
+                        _s._data.level = "INFO"
+                        _s.__exit__(None, None, None)
 
 
 __all__ = [

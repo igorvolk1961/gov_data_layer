@@ -7,10 +7,10 @@ Model name and vector size are configurable via config.yaml → EmbeddingConfig.
 from __future__ import annotations
 
 import asyncio
-import logging
+import contextlib
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from core.observability import get_tracer
 
 _HAS_SENTENCE_TRANSFORMERS = False
 try:
@@ -18,32 +18,26 @@ try:
 
     _HAS_SENTENCE_TRANSFORMERS = True
 except ImportError:
-    logger.warning("sentence-transformers not installed — embedding will use fallback")
+    pass  # handled in __init__
+
+
+def _log_tracer(level: str, name: str, **tags: Any) -> None:
+    """Log a message through the tracer (single-point root span)."""
+    with contextlib.suppress(Exception):
+        _t = get_tracer().trace(name, **tags)
+        _t.__enter__()
+        _t._data.level = level
+        _t.__exit__(None, None, None)
 
 
 class Embedder:
-    """Text embedder using sentence-transformers.
-
-    Model and vector size are read from AppConfig → EmbeddingConfig.
-    Falls back to identity embeddings if sentence-transformers is not available
-    (for testing/stub purposes).
-    """
+    """Text embedder using sentence-transformers."""
 
     def __init__(
         self,
         model_name: str | None = None,
         vector_size: int | None = None,
     ) -> None:
-        """Initialize the embedder.
-
-        Args:
-            model_name: Sentence-transformers model name.
-                        If None, reads from AppConfig (config.yaml → embedding.model).
-                        Default: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2".
-            vector_size: Expected embedding dimension.
-                         If None, reads from AppConfig (config.yaml → embedding.vector_size).
-                         Default: 384 (sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2).
-        """
         if model_name is None or vector_size is None:
             try:
                 from core.api.app_config import get_config
@@ -64,12 +58,9 @@ class Embedder:
         self._vector_size: int = vector_size
 
         if _HAS_SENTENCE_TRANSFORMERS:
-            logger.info("Embedder will load model '%s' on first use", model_name)
+            _log_tracer("INFO", "embedder.init", model=model_name)
         else:
-            logger.warning(
-                "sentence-transformers not available — "
-                "Embedder will return zero vectors (stub mode)"
-            )
+            _log_tracer("WARN", "embedder.stub")
 
     async def _ensure_model(self) -> None:
         """Lazy-load the model (blocking, runs in thread pool)."""
@@ -81,13 +72,9 @@ class Embedder:
         loop = asyncio.get_event_loop()
 
         def _load() -> Any:
-            logger.info("Loading embedding model '%s'...", self._model_name)
+            _log_tracer("INFO", "embedder.load", model=self._model_name)
             model = SentenceTransformer(self._model_name)
-            logger.info(
-                "Model '%s' loaded (vector size: %d)",
-                self._model_name,
-                model.get_embedding_dimension(),
-            )
+            _log_tracer("INFO", "embedder.loaded", vector_size=str(model.get_embedding_dimension()))
             return model
 
         self._model = await loop.run_in_executor(None, _load)
@@ -95,23 +82,11 @@ class Embedder:
             self._vector_size = self._model.get_embedding_dimension()
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of texts.
-
-        Args:
-            texts: List of text strings to embed.
-
-        Returns:
-            List of embedding vectors (list of floats).
-        """
         if not texts:
             return []
-
         await self._ensure_model()
-
         if self._model is None:
-            # Stub mode: return zero vectors
             return [[0.0] * self._vector_size for _ in texts]
-
         loop = asyncio.get_event_loop()
 
         def _encode() -> list[list[float]]:
@@ -121,20 +96,11 @@ class Embedder:
         return await loop.run_in_executor(None, _encode)
 
     async def embed_query(self, query: str) -> list[float]:
-        """Embed a single query string (for search).
-
-        Args:
-            query: Search query text.
-
-        Returns:
-            Single embedding vector.
-        """
         result = await self.embed([query])
         return result[0] if result else [0.0] * self._vector_size
 
     @property
     def vector_size(self) -> int:
-        """Get the embedding vector dimension."""
         return self._vector_size
 
 
