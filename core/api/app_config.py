@@ -86,6 +86,21 @@ class IngestConfig:
 
 
 @dataclass
+class RerankerConfig:
+    """Reranker configuration.
+
+    Attributes:
+        provider: Reranker implementation name ("composite" | "passthrough").
+        w_vector: Weight for Qdrant vector similarity score (S1).
+        w_topic: Weight for topic relevance score (sqrt of S2*S3).
+    """
+
+    provider: str = "composite"
+    w_vector: float = 0.6
+    w_topic: float = 0.4
+
+
+@dataclass
 class ServerConfig:
     """Server configuration."""
 
@@ -121,6 +136,7 @@ class AppConfig:
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     ingest: IngestConfig = field(default_factory=IngestConfig)
+    reranker: RerankerConfig = field(default_factory=RerankerConfig)
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     redis_host: str = "localhost"
@@ -229,12 +245,22 @@ class AppConfig:
             enabled=bool(ingest_cfg.get("enabled", False)),
         )
 
+        # --- Reranker ---
+        reranker_cfg = cfg.get("reranker", {})
+        reranker_weights = reranker_cfg.get("weights", {})
+        reranker = RerankerConfig(
+            provider=str(reranker_cfg.get("provider", "composite")),
+            w_vector=float(reranker_weights.get("vector", 0.6)),
+            w_topic=float(reranker_weights.get("topic", 0.4)),
+        )
+
         return cls(
             server=server,
             ocr=ocr,
             embedding=embedding,
             observability=observability,
             ingest=ingest,
+            reranker=reranker,
             qdrant_host=qdrant_host,
             qdrant_port=qdrant_port,
             redis_host=redis_host,

@@ -15,7 +15,6 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
-import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -54,6 +53,7 @@ from core.persistence.repository import (
     SectionRepository,
 )
 from core.regions import RegionResolver
+from core.reranker import Reranker
 
 logger = get_logger(__name__)
 
@@ -77,12 +77,14 @@ class ODLService(ODLServiceProtocol):
         db: DatabaseClient | None = None,
         qdrant: QdrantStore | None = None,
         embedder: Embedder | None = None,
+        reranker: Reranker | None = None,
     ) -> None:
         self._tracer: Tracer | None = tracer
         self._cache: CacheClient | None = cache
         self._db: DatabaseClient | None = db
         self._qdrant: QdrantStore | None = qdrant
         self._embedder: Embedder | None = embedder
+        self._reranker: Reranker | None = reranker
         self._doc_repo: DocumentRepository | None = None
         self._ref_repo: ReferenceRepository | None = None
         self._section_repo: SectionRepository | None = None
@@ -135,6 +137,23 @@ class ODLService(ODLServiceProtocol):
         if self._embedder is None:
             self._embedder = Embedder()
         return self._embedder
+
+    @property
+    def _reranker_lazy(self) -> Reranker:
+        """Lazy init of Reranker — falls back to TopicAwareReranker from config."""
+        if self._reranker is None:
+            from core.api.app_config import get_config
+            from core.reranker import PassThroughReranker, TopicAwareReranker
+
+            cfg = get_config().reranker
+            if cfg.provider == "passthrough":
+                self._reranker = PassThroughReranker()
+            else:
+                self._reranker = TopicAwareReranker(
+                    w_vector=cfg.w_vector,
+                    w_topic=cfg.w_topic,
+                )
+        return self._reranker
 
     @property
     def _qdrant_lazy(self) -> QdrantStore | None:
@@ -314,25 +333,20 @@ class ODLService(ODLServiceProtocol):
                     )
                     qspan.set_output({"hits": len(qdrant_chunks)})
 
-                # Page chunks for current page
-                page_chunks = list(qdrant_chunks[offset : offset + max_results])
+                # Re-rank ALL fetched chunks using pluggable Reranker (before pagination)
+                reranker = self._reranker_lazy
+                rspan = _child("search.rerank")
+                with rspan:
+                    all_chunks = await reranker.rerank(
+                        query=query,
+                        query_embedding=query_vector,
+                        chunks=qdrant_chunks,
+                        topic_matches=_query_topic_matches,
+                    )
+                    rspan.set_output({"reranked": len(all_chunks)})
 
-                # Combined ranking: re-score chunks using S1 (query↔chunk),
-                # S2 (query↔topic from search_topics) and S3 (chunk↔topic from payload)
-                _topic_id_to_s2: dict[str, float] = {}
-                if _query_topic_matches:
-                    _topic_id_to_s2 = {m["topic_id"]: m["score"] for m in _query_topic_matches}
-                _combined_chunks: list[tuple[DocumentChunk, float]] = []
-                for _ch, _s1 in page_chunks:
-                    _max_topic_score = 0.0
-                    for _tid in _ch.topic_ids:
-                        _s2 = _topic_id_to_s2.get(_tid, 0.0)
-                        _s3 = _ch.topic_scores.get(_tid, 0.0)
-                        _max_topic_score = max(_max_topic_score, _s2 * _s3)
-                    _combined_score = 0.6 * _s1 + 0.4 * math.sqrt(_max_topic_score)
-                    _combined_chunks.append((_ch, _combined_score))
-                _combined_chunks.sort(key=lambda x: x[1], reverse=True)
-                page_chunks = _combined_chunks
+                # Page chunks for current page (after ranking)
+                page_chunks = list(all_chunks[offset : offset + max_results])
 
                 # Resolve topic_id (UUID) → topic name from DB (one query for all chunks)
                 _all_topic_ids: set[str] = set()

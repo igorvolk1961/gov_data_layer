@@ -53,3 +53,10 @@ observability:
   log_level: "INFO"
   log_clear_on_start: false
   log_file: "logs/traces.log"
+
+# === Reranker ===
+reranker:
+  provider: "composite"       # composite | passthrough
+  weights:
+    vector: 0.6               # Weight for Qdrant vector similarity score (S1)
+    topic: 0.4                # Weight for topic relevance score (sqrt S2*S3)
