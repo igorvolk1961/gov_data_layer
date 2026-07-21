@@ -1389,3 +1389,59 @@ await self._cache.set(cache_key, response.model_dump_json(), ttl=timedelta(minut
 - SHA-256 ключ гарантирует отсутствие коллизий
 - При недоступности Redis — graceful degradation
 - Cache-aside имеет race condition при параллельных запросах (два одновременных miss → два запроса в Qdrant) — приемлемо для текущих нагрузок
+
+---
+
+## 20. Привязка чанков к рубрикам: per-chunk поиск
+
+**Дата:** 2026-07-21
+
+### Проблема
+
+Исходная реализация `link_sections_to_topics()` группировала чанки по секциям, затем для каждой секции искала семантически близкие рубрики и присваивала их всем чанкам секции. Это приводило к:
+
+- Однородным рубрикам у всех чанков одной секции (потеря нюансов)
+- Невозможности ранжировать чанки внутри секции по релевантности рубрике
+- Необходимости поддерживать таблицу `section_topic` в БД
+
+### Решение
+
+Каждый чанк самостоятельно ищет свои рубрики через cosine similarity в Qdrant (коллекция `topics`).
+
+```python
+async def link_chunks_to_topics(chunks, embedder, qdrant, top_k=5, score_threshold=0.15):
+    for chunk in chunks:
+        query_vec = await embedder.embed_query(chunk.text)
+        results = await qdrant.search_topics(query_vec, top_k)
+        chunk.topic_ids = [r.id for r in results if r.score >= score_threshold]
+        chunk.topic_scores = {r.id: r.score for r in results if r.score >= score_threshold}
+```
+
+Рубрики секции — это объединение рубрик её чанков (агрегация на уровне `section_topic` в БД).
+
+### Поиск: авто-определение рубрик
+
+`topic` удалён из API (`SearchContext`, `SearchRequest`). При поиске `ODLService.search_documents()`:
+
+1. Встраивает запрос пользователя
+2. Ищет релевантные рубрики в Qdrant (`search_topics`)
+3. Фильтрует чанки по найденным `topic_ids`
+4. Ранжирует комбинированной формулой: `0.6 * S1 + 0.4 * sqrt(max(S2 * S3))`, где:
+   - `S1` — схожесть запроса с чанком
+   - `S2` — схожесть запроса с рубрикой
+   - `S3` — схожесть чанка с рубрикой (хранится в `topic_scores`)
+
+### Рассмотренные альтернативы
+
+1. **Группировка по секциям** (было) — отклонено: однородные рубрики, нет ранжирования
+2. **Классификация рубрик через LLM** — отклонено: дорого, медленно, недетерминированно
+3. **Только query↔chunk (без рубрик)** — отклонено: нет тематической фильтрации
+
+### Последствия
+
+- Каждый чанк имеет свой набор `topic_ids` и `topic_scores`
+- `section_topic` в БД — агрегация (union) рубрик чанков секции
+- API чище: `topic` не нужен на входе
+- Комбинированное ранжирование даёт более точные результаты
+- `topic_id` → `topic_ids` (list) во всех слоях (модель, Qdrant payload, фильтры)
+- `chunker` и `embedder` — обязательные параметры `process_document_text()` (без lazy-init)

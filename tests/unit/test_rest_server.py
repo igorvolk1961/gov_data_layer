@@ -80,11 +80,10 @@ class TestSearchRequest:
         assert req.limit == 10
 
     def test_full(self) -> None:
-        req = SearchRequest(query="test", offset=5, limit=20, region="msk", topic="law")
+        req = SearchRequest(query="test", offset=5, limit=20, region="msk")
         assert req.offset == 5
         assert req.limit == 20
         assert req.region == "msk"
-        assert req.topic == "law"
 
     def test_empty_query_invalid(self) -> None:
         with pytest.raises(ValueError, match="String should have at least 1 character"):

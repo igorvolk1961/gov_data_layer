@@ -126,8 +126,7 @@ class ReferenceRepository:
     ) -> tuple[str, bool]:
         """Get or create a topic record.
 
-        Note: The ``topic`` table has no parent_id column (hierarchy is
-        supported by the ``rubric`` table instead). The ``parent_id`` and
+        Note: The ``topic`` table has no parent_id column . The ``parent_id`` and
         ``description`` parameters are accepted for API compatibility but
         ignored when inserting into the ``topic`` table.
 

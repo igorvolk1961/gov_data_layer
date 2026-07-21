@@ -170,12 +170,11 @@ class StubAdapter(SourceAdapter):
         Returns:
             List of matching SearchResult objects.
         """
-        if context is not None and (context.region or context.topic or context.organization):
+        if context is not None and (context.region or context.organization):
             logger.warning(
                 "StubAdapter does not support context filters — returning empty results",
                 extra={
                     "region": context.region,
-                    "topic": context.topic,
                     "organization": context.organization,
                 },
             )

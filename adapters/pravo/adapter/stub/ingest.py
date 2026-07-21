@@ -43,6 +43,21 @@ class StubIngestHandler(BaseIngestHandler):
 
                 section_repo = SectionRepository(adapter._db)
 
+            # Create required pipeline components
+            from core.api.app_config import get_config
+            from core.index.qdrant_store import QdrantStore
+            from core.ingest.chunker import DocStructSplitter
+            from core.ingest.embedder import Embedder
+
+            cfg = get_config()
+            chunker = DocStructSplitter()
+            embedder = Embedder(
+                model_name=cfg.embedding.model, vector_size=cfg.embedding.vector_size
+            )
+            qdrant = QdrantStore(
+                host=cfg.qdrant_host, port=cfg.qdrant_port, vector_size=cfg.embedding.vector_size
+            )
+
             count = 0
             errors: list[str] = []
             for publish_id in _STUB_PUBLISH_IDS_INITIAL:
@@ -64,11 +79,14 @@ class StubIngestHandler(BaseIngestHandler):
                     # 3. Get text via OCR (from cache in stub mode)
                     text = await adapter.get_content(document_id)  # type: ignore[attr-defined]
 
-                    # 4. Run shared pipeline: chunk → persist sections → embed → Qdrant
+                    # 4. Run shared pipeline: chunk → persist sections → embed → link topics → Qdrant
                     await process_document_text(
                         text,
                         document_id,
                         doc_uuid,
+                        chunker=chunker,
+                        embedder=embedder,
+                        qdrant=qdrant,
                         section_repo=section_repo,
                     )
 

@@ -8,12 +8,14 @@
 Переключение через config: OCR_PROVIDER=yandex_vision|tesseract|stub
 """
 
+from adapters.ocr.demo_doc_provider import DemoDocProvider
 from adapters.ocr.ocr_provider import OCRProvider
 from adapters.ocr.stub_ocr import StubOCR
 from adapters.ocr.tesseract_ocr import TesseractOCR
 from adapters.ocr.yandex_vision import YandexVisionOCR
 
 __all__ = [
+    "DemoDocProvider",
     "OCRProvider",
     "StubOCR",
     "TesseractOCR",

@@ -62,7 +62,6 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
         offset: int = 0,
         max_results: int = 10,
         region: str | None = None,
-        topic: list[str] | None = None,
         organization: list[str] | None = None,
         official_only: bool = False,
         max_age_days: int | None = None,
@@ -74,7 +73,6 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
             offset: Pagination offset.
             max_results: Maximum number of results (1-50).
             region: Region filter.
-            topic: Topic rubric filter (e.g. ["taxes", "property"]).
             organization: Organization filter (e.g. ["FNS", "Ministry of Justice"]).
             official_only: Only official sources.
             max_age_days: Maximum document age in days.
@@ -88,7 +86,6 @@ def create_mcp_server(service: ODLServiceProtocol) -> FastMCP:
             offset=offset,
             max_results=max_results,
             region=region,
-            topic=topic,
             organization=organization,
             official_only=official_only,
             max_age_days=max_age_days,

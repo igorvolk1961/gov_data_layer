@@ -55,8 +55,6 @@ class StubSearchHandler(BaseSearchHandler):
                 if context is not None:
                     if context.region and doc.region != context.region:
                         continue
-                    if context.topic and not any(t in doc.topic for t in context.topic):
-                        continue
                     if context.organization and not any(
                         doc.organization is not None and o == doc.organization
                         for o in context.organization

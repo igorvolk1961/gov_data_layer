@@ -222,16 +222,6 @@ class SearchContext(BaseModel):
         description="Trigram similarity score of the resolved region. "
         "Used as honesty signal in the response confidence.",
     )
-    # Примечание: None vs [] — в SearchContext None означает "фильтр не указан"
-    # (пропустить фильтрацию), в то время как в OfficialDocument, SearchResult
-    # и DocumentDetail пустой список [] означает "нет данных". Это различие
-    # отражает разную семантику: контекст запроса (фильтр) vs данные документа.
-    topic: list[str] | None = Field(
-        default=None,
-        description="Тематические рубрики для фильтрации (OR-семантика — совпадение с любой). "
-        "Пример: ['налоги', 'земельное право']. "
-        "None = фильтр не применяется.",
-    )
     organization: list[str] | None = Field(
         default=None,
         description="Органы для фильтрации (OR-семантика — совпадение с любым). "
@@ -489,6 +479,18 @@ class DocumentChunk(BaseModel):
         description="UUID региона из таблицы region. "
         "Заполняется из OfficialDocument.region_id при инжесте. "
         "Используется для фильтрации в Qdrant.",
+    )
+    topic_ids: list[str] = Field(
+        default_factory=list,
+        description="UUID рубрик (топиков), связанных с чанком. "
+        "Заполняется в link_chunks_to_topics() по косинусной близости текста чанка "
+        "с названиями рубрик. Используется для фильтрации в Qdrant.",
+    )
+    topic_scores: dict[str, float] = Field(
+        default_factory=dict,
+        description="Маппинг topic_id → score (косинусная близость чанка к рубрике). "
+        "Заполняется в link_chunks_to_topics(). "
+        "Используется для комбинированного ранжирования при поиске.",
     )
 
 

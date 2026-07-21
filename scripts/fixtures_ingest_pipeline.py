@@ -123,7 +123,9 @@ async def main() -> None:
     # ── Step 2: Full ingest for each document via PravoAdapter ───────
     print(f"\n=== Step 2: Ingesting {len(PUBLISH_IDS)} documents from source ===")
 
-    adapter = PravoAdapter(mode="stub", db=db)
+    from adapters.ocr import DemoDocProvider
+
+    adapter = PravoAdapter(mode="stub", db=db, ocr_provider=DemoDocProvider())
 
     for i, publish_id in enumerate(PUBLISH_IDS, 1):
         document_id = f"pravo-{publish_id}"
@@ -155,35 +157,23 @@ async def main() -> None:
                 print(f"  doc_uuid: {doc_uuid[:8] if doc_uuid else 'EMPTY'}...")
 
                 # Step 2d: Run shared pipeline as child of content_span
-                from adapters.base.ingest_pipeline import (
-                    link_sections_to_topics,
-                    process_document_text,
-                )
-                from core.persistence.repository import SectionRepository, SectionTopicRepository
+                from adapters.base.ingest_pipeline import process_document_text
+                from core.ingest.chunker import DocStructSplitter
+                from core.persistence.repository import SectionRepository
 
                 section_repo = SectionRepository(db) if db else None
+                chunker = DocStructSplitter()
                 chunks, toc = await process_document_text(
                     text,
                     document_id,
                     doc_uuid,
+                    chunker=chunker,
                     embedder=embedder,
                     qdrant=qdrant,
                     section_repo=section_repo,
                     parent_span=content_span,
                 )
                 print(f"  Chunks: {len(chunks)}, TOC: {len(toc)}")
-
-                # Step 2e: Link sections to rubrics (topics) via semantic similarity
-                if chunks and db:
-                    st_repo = SectionTopicRepository(db)
-                    links = await link_sections_to_topics(
-                        chunks,
-                        embedder=embedder,
-                        qdrant=qdrant,
-                        section_topic_repo=st_repo,
-                        parent_span=content_span,
-                    )
-                    print(f"  Section-topic links: {links}")
 
         except Exception as e:
             print(f"  ERROR: {e}")

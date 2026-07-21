@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -290,17 +291,79 @@ class ODLService(ODLServiceProtocol):
                 embedder = self._embedder_lazy
                 query_vector = await embedder.embed_query(query)
 
+                # Determine relevant topics by semantic similarity to query
+                _topic_filter: list[str] | None = None
+                try:
+                    _query_topic_matches = await self._qdrant.search_topics(
+                        query_embedding=query_vector,
+                        limit=3,
+                        score_threshold=0.3,
+                    )
+                    if _query_topic_matches:
+                        _topic_filter = [m["topic_id"] for m in _query_topic_matches]
+                except Exception:
+                    pass  # graceful degradation — no topic filtering
+
                 qspan = _child("search.qdrant")
                 with qspan:
                     qdrant_chunks = await self._qdrant.search(
                         query_embedding=query_vector,
                         limit=max_results + offset,
                         context=ctx,
+                        topic_ids=_topic_filter,
                     )
                     qspan.set_output({"hits": len(qdrant_chunks)})
 
                 # Page chunks for current page
                 page_chunks = list(qdrant_chunks[offset : offset + max_results])
+
+                # Combined ranking: re-score chunks using S1 (query↔chunk),
+                # S2 (query↔topic from search_topics) and S3 (chunk↔topic from payload)
+                _topic_id_to_s2: dict[str, float] = {}
+                if _query_topic_matches:
+                    _topic_id_to_s2 = {m["topic_id"]: m["score"] for m in _query_topic_matches}
+                _combined_chunks: list[tuple[DocumentChunk, float]] = []
+                for _ch, _s1 in page_chunks:
+                    _max_topic_score = 0.0
+                    for _tid in _ch.topic_ids:
+                        _s2 = _topic_id_to_s2.get(_tid, 0.0)
+                        _s3 = _ch.topic_scores.get(_tid, 0.0)
+                        _max_topic_score = max(_max_topic_score, _s2 * _s3)
+                    _combined_score = 0.6 * _s1 + 0.4 * math.sqrt(_max_topic_score)
+                    _combined_chunks.append((_ch, _combined_score))
+                _combined_chunks.sort(key=lambda x: x[1], reverse=True)
+                page_chunks = _combined_chunks
+
+                # Resolve topic_id (UUID) → topic name from DB (one query for all chunks)
+                _all_topic_ids: set[str] = set()
+                for _ch, _ in page_chunks:
+                    for _tid in _ch.topic_ids:
+                        if _tid:
+                            _all_topic_ids.add(_tid)
+                _topic_id_to_name: dict[str, str] = {}
+                if _all_topic_ids and self._db is not None:
+                    try:
+                        _rows = await self._db.fetch(
+                            "SELECT id, name FROM topic WHERE id = ANY($1::uuid[])",
+                            list(_all_topic_ids),
+                        )
+                        for _r in _rows:
+                            _topic_id_to_name[str(_r["id"])] = str(_r["name"])
+                    except Exception:
+                        pass  # graceful degradation — topics stay empty
+
+                # DEBUG: print raw chunk metadata before grouping
+                import sys as _sys
+
+                for _i, (_ch, _sc) in enumerate(page_chunks):
+                    _topic_names = [_topic_id_to_name.get(tid, tid[:8]) for tid in _ch.topic_ids]
+                    print(
+                        f"[DEBUG] chunk[{_i}] doc_id={_ch.document_id} score={_sc:.4f} "
+                        f"topics={_topic_names[:3]} "
+                        f"region={_ch.region} region_id={_ch.region_id} "
+                        f"snippet={_ch.text[:500]}",
+                        file=_sys.stderr,
+                    )
 
                 # Группируем чанки по document_id — один результат = один документ
                 # Для каждого документа храним (лучший score, лучший snippet, все section_path)
@@ -319,11 +382,13 @@ class ODLService(ODLServiceProtocol):
                     if ctx.score_threshold is not None and best_score < ctx.score_threshold:
                         continue
 
+                    # Данные из чанка (Qdrant payload) — приоритет для region и topic
+                    region = best_chunk.region
+
                     # Строим title из метаданных документа
                     url = ""
                     source_name = ""
                     jurisdiction: str | None = None
-                    region: str | None = None
                     topic_list: list[str] = []
                     organization_list: list[str] = []
                     document_number: str | None = None
@@ -347,8 +412,7 @@ class ODLService(ODLServiceProtocol):
                                     url = doc_meta.url or ""
                                     source_name = doc_meta.source.name if doc_meta.source else ""
                                     jurisdiction = doc_meta.jurisdiction
-                                    region = doc_meta.region
-                                    topic_list = doc_meta.topic or []
+                                    # region и topic берём из чанка, не из БД
                                     organization_list = (
                                         [doc_meta.organization] if doc_meta.organization else []
                                     )
@@ -368,6 +432,13 @@ class ODLService(ODLServiceProtocol):
                         doc_title = best_chunk.text[:120] + (
                             "…" if len(best_chunk.text) > 120 else ""
                         )
+
+                    # Resolve topic_id → topic names for the best chunk
+                    topic_list = [
+                        _topic_id_to_name[tid]
+                        for tid in best_chunk.topic_ids
+                        if tid in _topic_id_to_name
+                    ]
 
                     # Сниппет — текст лучшего чанка
                     snippet = best_chunk.text[:300] + ("…" if len(best_chunk.text) > 300 else "")
@@ -839,8 +910,6 @@ class ODLService(ODLServiceProtocol):
             Both None if region is already specified or no rubric context.
         """
         if ctx.region is not None:
-            return None, None
-        if not ctx.topic:
             return None, None
         ref_repo = self._ref_repo_lazy
         if ref_repo is None:

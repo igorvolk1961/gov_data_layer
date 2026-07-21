@@ -1,0 +1,9 @@
+Refactored rubric-to-topic semantic matching pipeline:
+- Each chunk independently searches for rubrics (topic_ids) via cosine similarity
+- Auto topic resolution in search with combined ranking (query×chunk + query×topic × chunk×topic)
+- Removed lazy-init of chunker/embedder from pipeline functions
+- New DemoDocProvider for reading pre-downloaded OCR texts from fixtures
+- Renamed topic_id → topic_ids across all layers
+- Removed topic param from API and SearchContext
+- Tests updated for all changes
+- Fixed conftest region_id fixture ON CONFLICT

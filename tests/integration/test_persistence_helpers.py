@@ -178,41 +178,45 @@ async def test_transaction_rollback(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_paginated_fetch(db: DatabaseClient) -> None:
+async def test_paginated_fetch(
+    db: DatabaseClient,
+    source_uuid: str,
+) -> None:
     """Verify paginated_fetch() returns correct slices of data."""
     # Insert test data
     for i in range(10):
         await db.execute(
-            "INSERT INTO rubric (id, external_id, name) VALUES (gen_random_uuid(), $1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO topic (id, source_id, external_id, name) VALUES (gen_random_uuid(), $1::uuid, $2, $3) ON CONFLICT (source_id, external_id) DO NOTHING",
+            source_uuid,
             f"paginated-ext-{i}",
-            f"paginated-rubric-{i}",
+            f"paginated-topic-{i}",
         )
 
     # Fetch first page (limit=3, offset=0)
     page1 = await db.paginated_fetch(
-        "SELECT name FROM rubric WHERE name LIKE 'paginated-rubric-%' ORDER BY name",
+        "SELECT name FROM topic WHERE name LIKE 'paginated-topic-%' ORDER BY name",
         limit=3,
         offset=0,
     )
     assert len(page1) == 3
-    assert page1[0]["name"] == "paginated-rubric-0"
-    assert page1[1]["name"] == "paginated-rubric-1"
-    assert page1[2]["name"] == "paginated-rubric-2"
+    assert page1[0]["name"] == "paginated-topic-0"
+    assert page1[1]["name"] == "paginated-topic-1"
+    assert page1[2]["name"] == "paginated-topic-2"
 
     # Fetch second page (limit=3, offset=3)
     page2 = await db.paginated_fetch(
-        "SELECT name FROM rubric WHERE name LIKE 'paginated-rubric-%' ORDER BY name",
+        "SELECT name FROM topic WHERE name LIKE 'paginated-topic-%' ORDER BY name",
         limit=3,
         offset=3,
     )
     assert len(page2) == 3
-    assert page2[0]["name"] == "paginated-rubric-3"
-    assert page2[1]["name"] == "paginated-rubric-4"
-    assert page2[2]["name"] == "paginated-rubric-5"
+    assert page2[0]["name"] == "paginated-topic-3"
+    assert page2[1]["name"] == "paginated-topic-4"
+    assert page2[2]["name"] == "paginated-topic-5"
 
     # Fetch beyond available data
     page3 = await db.paginated_fetch(
-        "SELECT name FROM rubric WHERE name LIKE 'paginated-rubric-%' ORDER BY name",
+        "SELECT name FROM topic WHERE name LIKE 'paginated-topic-%' ORDER BY name",
         limit=3,
         offset=20,
     )
@@ -378,10 +382,13 @@ async def test_transaction_proxy_all_methods(
         # executemany
         await tx.executemany(
             """
-            INSERT INTO rubric (id, external_id, name) VALUES (gen_random_uuid(), $1, $2)
-            ON CONFLICT DO NOTHING
+            INSERT INTO topic (id, source_id, external_id, name) VALUES (gen_random_uuid(), $1::uuid, $2, $3)
+            ON CONFLICT (source_id, external_id) DO NOTHING
             """,
-            [("tx-proxy-ext-1", "tx-proxy-rubric-1"), ("tx-proxy-ext-2", "tx-proxy-rubric-2")],
+            [
+                (source_uuid, "tx-proxy-ext-1", "tx-proxy-topic-1"),
+                (source_uuid, "tx-proxy-ext-2", "tx-proxy-topic-2"),
+            ],
         )
 
     # Verify data persisted

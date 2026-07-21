@@ -299,6 +299,10 @@ class PravoAdapterBase(RSSAdapter, TocMixin):
                     lang=app_cfg.ocr.tesseract_lang,
                     timeout=app_cfg.ocr.tesseract_timeout,
                 )
+            elif provider_name == "demo_doc":
+                from adapters.ocr.demo_doc_provider import DemoDocProvider
+
+                self._ocr_provider = DemoDocProvider()
             elif provider_name == "yandex_vision":
                 from adapters.ocr.yandex_vision import YandexVisionOCR
 

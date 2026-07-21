@@ -106,15 +106,16 @@ async def jurisdiction_id(db: DatabaseClient, source_uuid: str) -> str:
 
 
 @pytest_asyncio.fixture
-async def region_id(db: DatabaseClient) -> AsyncIterator[str]:
+async def region_id(db: DatabaseClient, source_uuid: str) -> AsyncIterator[str]:
     """Insert a test region and return its UUID. Cleans up after the test."""
     result = await db.fetchrow(
         """
-        INSERT INTO region (external_id, name)
-        VALUES ($1, $2)
-        ON CONFLICT (external_id) DO UPDATE SET name = EXCLUDED.name
+        INSERT INTO region (source_id, external_id, name)
+        VALUES ($1::uuid, $2, $3)
+        ON CONFLICT (source_id, external_id) DO UPDATE SET name = EXCLUDED.name
         RETURNING id
         """,
+        source_uuid,
         "test-region",
         "Test Region",
     )

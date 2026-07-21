@@ -35,7 +35,6 @@ class SearchRequest(BaseModel):
     offset: int = Field(default=0, ge=0, description="Pagination offset")
     limit: int = Field(default=10, ge=1, le=100, description="Max results to return")
     region: str | None = Field(default=None, description="Region filter")
-    topic: str | None = Field(default=None, description="Topic filter")
     score_threshold: float | None = Field(
         default=None,
         ge=0.0,
@@ -202,7 +201,6 @@ def create_app(
                 offset=body.offset,
                 max_results=body.limit,
                 region=body.region,
-                topic=body.topic,
                 score_threshold=body.score_threshold,
             )
             response = await service.search_documents(body.query, context)
@@ -222,7 +220,6 @@ def create_app(
         source_id: str,
         query: str | None = None,
         region: str | None = None,
-        topic: str | None = None,
         score_threshold: float | None = None,
         max_citation_length: int = 2000,
         max_chunks: int = 5,
@@ -244,14 +241,13 @@ def create_app(
         try:
             ctx = SearchContext(
                 region=region,
-                topic=[topic] if topic else None,
                 score_threshold=score_threshold,
                 max_results=max_chunks,
             )
             detail = await service.get_document_detail(
                 source_id=source_id,
                 query=query,
-                context=ctx if (query or region or topic or score_threshold is not None) else None,
+                context=ctx if (query or region or score_threshold is not None) else None,
                 max_citation_length=max_citation_length,
             )
             return JSONResponse(content=detail.model_dump(mode="json"))

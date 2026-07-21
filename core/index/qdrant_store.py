@@ -135,6 +135,16 @@ class QdrantStore:
             field_name="not_actual_since",
             field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
         )
+        client.create_payload_index(
+            collection_name=self._collection,
+            field_name="region_id",
+            field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
+        )
+        client.create_payload_index(
+            collection_name=self._collection,
+            field_name="topic_ids",
+            field_schema=_qdrant_models.PayloadSchemaType.KEYWORD,
+        )
 
     async def upsert_chunks(self, chunks: list[DocumentChunk]) -> None:
         """Insert or update chunks with embeddings and payload.
@@ -174,6 +184,10 @@ class QdrantStore:
                 payload["region"] = chunk.region
             if chunk.region_id is not None:
                 payload["region_id"] = chunk.region_id
+            if chunk.topic_ids:
+                payload["topic_ids"] = chunk.topic_ids
+            if chunk.topic_scores:
+                payload["topic_scores"] = chunk.topic_scores
 
             points.append(
                 _qdrant_models.PointStruct(
@@ -245,6 +259,8 @@ class QdrantStore:
             section_chunk_index=int(payload.get("section_chunk_index", 0)),
             data_freshness=data_freshness,
             not_actual_since=not_actual_since,
+            topic_ids=list(payload.get("topic_ids", [])),
+            topic_scores=dict(payload.get("topic_scores", {})),
         )
 
     async def deactivate_sections(
@@ -318,6 +334,7 @@ class QdrantStore:
         filters: dict[str, Any] | None = None,
         limit: int = 10,
         context: SearchContext | None = None,
+        topic_ids: list[str] | None = None,
     ) -> list[tuple[DocumentChunk, float]]:
         """Semantic search with payload filtering (Metadata Routing).
 
@@ -326,8 +343,11 @@ class QdrantStore:
             filters: Optional additional payload filters.
             limit: Max number of results.
             context: Optional SearchContext for Metadata Routing.
-                     Fields region, topic, organization, max_age_days
+                     Fields region, organization, max_age_days
                      are translated to Qdrant payload filters.
+            topic_ids: Optional topic UUIDs for automatic topic filtering.
+                       Resolved internally from query semantics if not
+                       provided through SearchContext.
 
         Returns:
             List of (DocumentChunk, score) tuples, ordered by relevance.
@@ -365,13 +385,6 @@ class QdrantStore:
                         match=_qdrant_models.MatchValue(value=context.region_id),
                     )
                 )
-            if context.topic:
-                conditions.append(
-                    _qdrant_models.FieldCondition(
-                        key="topic",
-                        match=_qdrant_models.MatchAny(any=context.topic),
-                    )
-                )
             if context.organization:
                 conditions.append(
                     _qdrant_models.FieldCondition(
@@ -396,6 +409,15 @@ class QdrantStore:
         if conditions:
             qdrant_filter = _qdrant_models.Filter(
                 must=conditions,
+            )
+
+        # Topic filter (auto-resolved from query or explicit)
+        if topic_ids:
+            conditions.append(
+                _qdrant_models.FieldCondition(
+                    key="topic_ids",
+                    match=_qdrant_models.MatchAny(any=topic_ids),
+                )
             )
 
         # Merge default not_actual_since filter

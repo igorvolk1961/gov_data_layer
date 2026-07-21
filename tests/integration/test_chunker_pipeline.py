@@ -174,6 +174,14 @@ class TestFullPipeline:
     These tests require a running Qdrant instance on localhost:6333.
     """
 
+    @pytest.fixture
+    def chunker(self) -> DocStructSplitter:
+        return DocStructSplitter(max_chunk_size=1024, chunk_overlap=200)
+
+    @pytest.fixture
+    def embedder(self) -> Embedder:
+        return Embedder()
+
     @pytest_asyncio.fixture
     async def qdrant(self) -> QdrantStore:
         """Create a QdrantStore with a unique test collection to avoid conflicts."""
@@ -196,12 +204,19 @@ class TestFullPipeline:
                     client.delete_collection(collection_name=store._collection)
 
     @pytest.mark.asyncio
-    async def test_process_document_text_returns_chunks_and_toc(self, qdrant: QdrantStore) -> None:
+    async def test_process_document_text_returns_chunks_and_toc(
+        self,
+        chunker: DocStructSplitter,
+        embedder: Embedder,
+        qdrant: QdrantStore,
+    ) -> None:
         """Full pipeline should return (chunks, toc)."""
         chunks, toc = await process_document_text(
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-doc-uuid",
+            chunker=chunker,
+            embedder=embedder,
             qdrant=qdrant,
         )
         assert isinstance(chunks, list)
@@ -212,12 +227,19 @@ class TestFullPipeline:
                 assert c.embedding is not None, "Chunk should have embedding after pipeline"
 
     @pytest.mark.asyncio
-    async def test_qdrant_upsert_and_count(self, qdrant: QdrantStore) -> None:
+    async def test_qdrant_upsert_and_count(
+        self,
+        chunker: DocStructSplitter,
+        embedder: Embedder,
+        qdrant: QdrantStore,
+    ) -> None:
         """After process_document_text, Qdrant should have stored chunks."""
         chunks, _toc = await process_document_text(
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-doc-uuid",
+            chunker=chunker,
+            embedder=embedder,
             qdrant=qdrant,
         )
         if not chunks:
@@ -226,12 +248,19 @@ class TestFullPipeline:
         assert count == len(chunks), f"Qdrant count {count} doesn't match chunks {len(chunks)}"
 
     @pytest.mark.asyncio
-    async def test_search_after_upsert(self, qdrant: QdrantStore) -> None:
+    async def test_search_after_upsert(
+        self,
+        chunker: DocStructSplitter,
+        embedder: Embedder,
+        qdrant: QdrantStore,
+    ) -> None:
         """After upsert, semantic search should return results."""
         chunks, _toc = await process_document_text(
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-doc-uuid",
+            chunker=chunker,
+            embedder=embedder,
             qdrant=qdrant,
         )
         if not chunks:
@@ -252,12 +281,19 @@ class TestFullPipeline:
             assert score >= 0.0, f"Score should be non-negative, got {score}"
 
     @pytest.mark.asyncio
-    async def test_delete_document_chunks(self, qdrant: QdrantStore) -> None:
+    async def test_delete_document_chunks(
+        self,
+        chunker: DocStructSplitter,
+        embedder: Embedder,
+        qdrant: QdrantStore,
+    ) -> None:
         """After deleting chunks for a document, count should be 0."""
         chunks, _toc = await process_document_text(
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-doc-uuid",
+            chunker=chunker,
+            embedder=embedder,
             qdrant=qdrant,
         )
         if not chunks:
@@ -268,12 +304,19 @@ class TestFullPipeline:
         assert count == 0, f"After delete, count should be 0, got {count}"
 
     @pytest.mark.asyncio
-    async def test_empty_text_pipeline(self, qdrant: QdrantStore) -> None:
+    async def test_empty_text_pipeline(
+        self,
+        chunker: DocStructSplitter,
+        embedder: Embedder,
+        qdrant: QdrantStore,
+    ) -> None:
         """Empty text should return empty lists and not crash."""
         chunks, toc = await process_document_text(
             text="",
             document_id="pravo-empty",
             doc_uuid="empty-uuid",
+            chunker=chunker,
+            embedder=embedder,
             qdrant=qdrant,
         )
         assert chunks == []
@@ -292,17 +335,32 @@ class TestPipelineWithoutQdrant:
     """
 
     @pytest.fixture
+    def chunker(self) -> DocStructSplitter:
+        return DocStructSplitter(max_chunk_size=1024, chunk_overlap=200)
+
+    @pytest.fixture
+    def embedder(self) -> Embedder:
+        return Embedder()
+
+    @pytest.fixture
     def disabled_qdrant(self) -> QdrantStore:
         """A QdrantStore in disabled mode — all operations are no-ops."""
         return QdrantStore(disabled=True)
 
     @pytest.mark.asyncio
-    async def test_pipeline_no_qdrant_still_works(self, disabled_qdrant: QdrantStore) -> None:
+    async def test_pipeline_no_qdrant_still_works(
+        self,
+        chunker: DocStructSplitter,
+        embedder: Embedder,
+        disabled_qdrant: QdrantStore,
+    ) -> None:
         """When Qdrant is disabled, pipeline should still return chunks and TOC."""
         chunks, toc = await process_document_text(
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-doc-uuid",
+            chunker=chunker,
+            embedder=embedder,
             qdrant=disabled_qdrant,
         )
         assert isinstance(chunks, list)
@@ -312,12 +370,19 @@ class TestPipelineWithoutQdrant:
             assert c.embedding is not None
 
     @pytest.mark.asyncio
-    async def test_pipeline_consistent_document_id(self, disabled_qdrant: QdrantStore) -> None:
+    async def test_pipeline_consistent_document_id(
+        self,
+        chunker: DocStructSplitter,
+        embedder: Embedder,
+        disabled_qdrant: QdrantStore,
+    ) -> None:
         """Both chunks and TOC should use the same document_id."""
         chunks, toc = await process_document_text(
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-uuid",
+            chunker=chunker,
+            embedder=embedder,
             qdrant=disabled_qdrant,
         )
         for c in chunks:
@@ -329,6 +394,8 @@ class TestPipelineWithoutQdrant:
     @pytest.mark.asyncio
     async def test_pipeline_with_section_repo(
         self,
+        chunker: DocStructSplitter,
+        embedder: Embedder,
         disabled_qdrant: QdrantStore,
     ) -> None:
         """When section_repo is provided, sections should be persisted and section_uuids set."""
@@ -343,6 +410,8 @@ class TestPipelineWithoutQdrant:
             text=TEST_OCR_TEXT,
             document_id="pravo-7800202607010012",
             doc_uuid="test-doc-uuid",
+            chunker=chunker,
+            embedder=embedder,
             qdrant=disabled_qdrant,
             section_repo=mock_section_repo,
         )

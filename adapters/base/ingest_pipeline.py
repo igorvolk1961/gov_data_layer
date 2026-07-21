@@ -33,16 +33,16 @@ async def process_document_text(
     text: str,
     document_id: str,
     doc_uuid: str,
-    chunker: DocStructSplitter | None = None,
-    embedder: Embedder | None = None,
-    qdrant: QdrantStore | None = None,
+    chunker: DocStructSplitter,
+    embedder: Embedder,
+    qdrant: QdrantStore,
     section_repo: SectionRepository | None = None,
     section_uuids: dict[str, str] | None = None,
     region: str | None = None,
     region_id: str | None = None,
     parent_span: Any = None,
 ) -> tuple[list[DocumentChunk], list[TocNode]]:
-    """Process document text: chunk -> persist sections -> embed -> Qdrant.
+    """Process document text: chunk -> persist sections -> embed -> link topics -> Qdrant.
 
     Uses DocStructSplitter.split_text() which parses the text ONCE
     and returns both chunks and TOC.
@@ -52,15 +52,19 @@ async def process_document_text(
     mapping is then set on each chunk's ``section_uuids`` field, linking
     Qdrant points to their corresponding PostgreSQL section records.
 
+    After embedding, if ``section_repo`` is available, chunks are linked to
+    topics (rubrics) via link_chunks_to_topics() — each chunk searches the
+    Qdrant 'topics' collection for semantically similar rubrics.
+
     All CPU-bound steps (chunking, embedding) run in thread pool executors.
 
     Args:
         text: Full document text (from OCR).
         document_id: External document ID (source_id-publish_id).
         doc_uuid: UUID of the document record in PostgreSQL.
-        chunker: DocStructSplitter instance (lazy-init if None).
-        embedder: Embedder instance (lazy-init if None).
-        qdrant: QdrantStore instance (lazy-init if None).
+        chunker: DocStructSplitter instance (required).
+        embedder: Embedder instance (required).
+        qdrant: QdrantStore instance (required).
         section_repo: Optional SectionRepository for persisting TOC sections.
         section_uuids: Optional pre-existing mapping of external_id -> UUID.
                        If provided, persistence is skipped.
@@ -68,10 +72,6 @@ async def process_document_text(
     Returns:
         Tuple of (chunks, toc).
     """
-    from core.index.qdrant_store import QdrantStore as _QdrantStore
-    from core.ingest.chunker import DocStructSplitter as _Chunker
-    from core.ingest.embedder import Embedder as _Embedder
-
     # Tracing — create ONE parent span for the entire pipeline
     try:
         from core.observability import get_tracer
@@ -95,10 +95,6 @@ async def process_document_text(
     ctx = pipeline_span if parent_span is None else contextlib.nullcontext()
 
     with ctx:
-        chunker = chunker or _Chunker()
-        embedder = embedder or _Embedder()
-        qdrant = qdrant or _QdrantStore()
-
         if not text:
             child = _child("pipeline.skip_empty")
             with child:
@@ -207,7 +203,28 @@ async def process_document_text(
             for chunk, emb in zip(chunks, embeddings, strict=True):
                 chunk.embedding = emb
 
-        # 5. Store in Qdrant
+        # 5. Link chunks to topics (rubrics)
+        if resolved_section_uuids and section_repo is not None:
+            child = _child("pipeline.link_topics")
+            with child:
+                try:
+                    from core.persistence.repository.section_topic_repo import (
+                        SectionTopicRepository,
+                    )
+
+                    st_repo = SectionTopicRepository(section_repo._db)
+                    links_count = await link_chunks_to_topics(
+                        chunks,
+                        embedder=embedder,
+                        qdrant=qdrant,
+                        section_topic_repo=st_repo,
+                    )
+                    child.set_output({"links_created": links_count})
+                except Exception as exc:
+                    child.set_error(exc)
+                    child.set_output({"error": str(exc)[:200]})
+
+        # 6. Store in Qdrant (WITH topic_ids already populated)
         child = _child("pipeline.qdrant_upsert")
         with child:
             await qdrant.upsert_chunks(chunks)
@@ -248,111 +265,82 @@ def _null_context() -> _NullContext:
     return _NullContext()
 
 
-async def link_sections_to_topics(
+async def link_chunks_to_topics(
     chunks: list[DocumentChunk],
-    embedder: Embedder | None = None,
-    qdrant: QdrantStore | None = None,
+    embedder: Embedder,
+    qdrant: QdrantStore,
     section_topic_repo: Any = None,
-    max_topics_per_section: int = 3,
+    max_topics_per_chunk: int = 3,
     score_threshold: float = 0.25,
-    parent_span: Any = None,
 ) -> int:
-    """Link document sections to semantically similar topics (rubrics).
+    """Link chunks to semantically similar topics, then aggregate up to sections.
 
-    For each section with a UUID, embed its text, query Qdrant ``topics``
-    collection, and insert matching topics into the ``section_topic`` table.
+    For each chunk: embed chunk text -> search Qdrant 'topics' collection ->
+    set chunk.topic_ids. Then aggregate per section: union of all chunk topic_ids
+    -> save to section_topic table.
 
     Args:
         chunks: List of DocumentChunk from the pipeline.
-        embedder: Embedder instance (lazy-init if None).
-        qdrant: QdrantStore instance (lazy-init if None).
+        embedder: Embedder instance (required).
+        qdrant: QdrantStore instance (required).
         section_topic_repo: SectionTopicRepository instance.
-        max_topics_per_section: Max topics to link per section.
+        max_topics_per_chunk: Max topics to link per chunk.
         score_threshold: Minimum similarity score.
 
     Returns:
-        Total number of section-topic links created.
+        Total number of chunk-topic links created.
     """
     if not chunks or section_topic_repo is None:
         return 0
 
-    # Lazy init (same pattern as process_document_text)
-    if embedder is None:
-        from core.ingest.embedder import Embedder as _Embedder
-
-        embedder = _Embedder()
-    if qdrant is None:
-        from core.index.qdrant_store import QdrantStore as _QdrantStore
-
-        qdrant = _QdrantStore()
-
-    # Build a map: section_uuid -> concatenated text from all chunks sharing that section
-    section_texts: dict[str, list[str]] = {}
-    for chunk in chunks:
-        for sec_uuid in chunk.section_uuids:
-            if sec_uuid:
-                section_texts.setdefault(sec_uuid, []).append(chunk.text)
-
-    if not section_texts:
-        return 0
-
-    # Get tracer
-    _link_tracer: Any = None
-    try:
-        from core.observability import get_tracer as _gt
-
-        _link_tracer = _gt()
-    except Exception:
-        _link_tracer = None
-
-    def _link_child(name: str) -> Any:
-        if _link_tracer is not None and hasattr(_link_tracer, "span"):
-            return _link_tracer.span(name, parent=parent_span)
-        return _NullSpan()
-
     total_links = 0
+    # section_uuid -> set of topic_ids (aggregated from chunks)
+    section_topics: dict[str, set[str]] = {}
 
-    for sec_uuid, texts in section_texts.items():
-        full_text = " ".join(texts)[:2000]  # limit to 2000 chars
-        if not full_text.strip():
+    for chunk in chunks:
+        if not chunk.text.strip():
             continue
 
-        child = _link_child("pipeline.link_topics")
-        with child:
-            child.set_input({"section_uuid": sec_uuid[:8], "text_len": len(full_text)})
-            try:
-                # 1. Embed section text
-                emb = await embedder.embed([full_text])
-                if not emb or not emb[0]:
-                    continue
+        # 1. Embed chunk text
+        emb = await embedder.embed([chunk.text])
+        if not emb or not emb[0]:
+            continue
 
-                # 2. Search Qdrant topics by similarity
-                matches = await qdrant.search_topics(
-                    query_embedding=emb[0],
-                    limit=max_topics_per_section,
-                    score_threshold=score_threshold,
-                )
+        # 2. Search Qdrant topics by similarity to CHUNK text
+        matches = await qdrant.search_topics(
+            query_embedding=emb[0],
+            limit=max_topics_per_chunk,
+            score_threshold=score_threshold,
+        )
 
-                # 3. Link to topics via SectionTopicRepository
-                # Use topic_id (DB UUID from Qdrant payload), NOT topic_uuid (Qdrant point ID)
-                links = [
-                    {"section_id": sec_uuid, "topic_id": m["topic_id"], "score": m["score"]}
-                    for m in matches
-                ]
-                if links:
-                    await section_topic_repo.batch_link(links)
-                    total_links += len(links)
-                    child.set_output(
-                        {"links_created": len(links), "topics": [m["name"] for m in matches]}
-                    )
-            except Exception as exc:
-                child.set_error(exc)
-                child.set_output({"error": str(exc)[:200]})
+        # 3. Set topic_ids and topic_scores directly on the chunk
+        topic_ids = [m["topic_id"] for m in matches]
+        topic_scores = {m["topic_id"]: m["score"] for m in matches}
+        chunk.topic_ids = topic_ids
+        chunk.topic_scores = topic_scores
+        total_links += len(topic_ids)
+
+        # 4. Aggregate: for each section this chunk belongs to,
+        #    add its topic_ids to the section's set
+        for sec_uuid in chunk.section_uuids:
+            if sec_uuid:
+                if sec_uuid not in section_topics:
+                    section_topics[sec_uuid] = set()
+                section_topics[sec_uuid].update(topic_ids)
+
+    # 5. Persist section->topic aggregations to section_topic table
+    if section_topics:
+        links = []
+        for sec_uuid, sec_topic_ids in section_topics.items():
+            for tid in sec_topic_ids:
+                links.append({"section_id": sec_uuid, "topic_id": tid, "score": 1.0})
+        if links:
+            await section_topic_repo.batch_link(links)
 
     return total_links
 
 
 __all__ = [
-    "link_sections_to_topics",
+    "link_chunks_to_topics",
     "process_document_text",
 ]

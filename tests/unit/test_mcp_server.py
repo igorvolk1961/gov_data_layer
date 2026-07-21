@@ -141,7 +141,6 @@ class TestSearchDocuments:
             offset=5,
             max_results=20,
             region="Московская область",
-            topic=["taxes"],
             organization=["FNS"],
             official_only=True,
             max_age_days=30,
@@ -155,7 +154,6 @@ class TestSearchDocuments:
         assert context.offset == 5
         assert context.max_results == 20
         assert context.region == "Московская область"
-        assert context.topic == ["taxes"]
         assert context.organization == ["FNS"]
         assert context.max_age_days == 30
 
