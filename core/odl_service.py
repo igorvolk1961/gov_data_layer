@@ -363,19 +363,6 @@ class ODLService(ODLServiceProtocol):
                     except Exception:
                         pass  # graceful degradation — topics stay empty
 
-                # DEBUG: print raw chunk metadata before grouping
-                import sys as _sys
-
-                for _i, (_ch, _sc) in enumerate(page_chunks):
-                    _topic_names = [_topic_id_to_name.get(tid, tid[:8]) for tid in _ch.topic_ids]
-                    print(
-                        f"[DEBUG] chunk[{_i}] doc_id={_ch.document_id} score={_sc:.4f} "
-                        f"topics={_topic_names[:3]} "
-                        f"region={_ch.region} region_id={_ch.region_id} "
-                        f"snippet={_ch.text[:500]}",
-                        file=_sys.stderr,
-                    )
-
                 # Группируем чанки по document_id — один результат = один документ
                 # Для каждого документа храним (лучший score, лучший snippet, все section_path)
                 doc_buckets: dict[str, list[tuple[DocumentChunk, float]]] = {}

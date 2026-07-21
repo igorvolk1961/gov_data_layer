@@ -131,7 +131,15 @@ class _Span:
         if self._write_callback:
             with contextlib.suppress(Exception):
                 self._write_callback(self._data)
-        # Also print to console for real-time visibility
+        # Print to console if level >= configured minimum
+        try:
+            span_idx = _CONSOLE_LEVELS.index(self._data.level)
+            min_idx = _CONSOLE_LEVELS.index(_console_min_level)
+        except ValueError:
+            span_idx = 1  # fallback: treat unknown as INFO
+            min_idx = 1
+        if span_idx < min_idx:
+            return
         short = f"[{self._data.level}] {self._data.name}"
         if self._data.trace_id:
             short += f" (trace:{self._data.trace_id[:8]}"
@@ -456,6 +464,10 @@ class FileFallbackTracer(Tracer):
         return _Span(name, tid, sid, pid, tags, _write_callback=self._write)
 
 
+# Console output level (set from ObservabilityConfig.log_level in create_tracer)
+_CONSOLE_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+_console_min_level: str = "INFO"
+
 # ──────────────────────────────────────────────
 #  Фабрика
 # ──────────────────────────────────────────────
@@ -476,6 +488,8 @@ def create_tracer(config: ObservabilityConfig) -> Tracer:
     Returns:
         Tracer: ready-to-use implementation.
     """
+    global _console_min_level
+    _console_min_level = config.log_level.upper()
     if config.langfuse_enabled:
         tracer = LangFuseTracer(config)
         # Если LangFuse не инициализировался — fallback на файл
