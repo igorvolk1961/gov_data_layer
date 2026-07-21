@@ -346,6 +346,35 @@ class ReferenceRepository:
         assert result is not None
         return str(result["id"])
 
+    async def get_organization_data(
+        self,
+        external_id: str,
+        source_id: str,
+    ) -> dict[str, str | None] | None:
+        """Get organization jurisdiction_id and region_id by external_id.
+
+        Args:
+            external_id: External ID from the source API.
+            source_id: UUID of the data source.
+
+        Returns:
+            Dict with ``jurisdiction_id`` and ``region_id`` keys, or None if not found.
+        """
+        row = await self._db.fetchrow(
+            """
+            SELECT jurisdiction_id, region_id FROM organization
+            WHERE external_id = $1 AND source_id = $2::uuid
+            """,
+            external_id,
+            source_id,
+        )
+        if row is None:
+            return None
+        return {
+            "jurisdiction_id": str(row["jurisdiction_id"]) if row["jurisdiction_id"] else None,
+            "region_id": str(row["region_id"]) if row["region_id"] else None,
+        }
+
     async def search_region_id(self, name: str) -> tuple[str, float] | None:
         """Resolve region name to region UUID via trigram search.
 

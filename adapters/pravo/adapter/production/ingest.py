@@ -162,11 +162,12 @@ class ProductionIngestHandler(BaseIngestHandler):
         db = self._adapter._db
         if db is None:
             return ""
-        row = await db.fetchval(
-            "SELECT id FROM document WHERE publish_id = $1",
-            publish_id,
-        )
-        return str(row) if row else ""
+        from core.persistence.repository import DocumentRepository, ReferenceRepository
+
+        ref_repo = ReferenceRepository(db)
+        doc_repo = DocumentRepository(db, ref_repo)
+        doc_uuid = await doc_repo.get_document_uuid(publish_id)
+        return doc_uuid or ""
 
 
 __all__ = [

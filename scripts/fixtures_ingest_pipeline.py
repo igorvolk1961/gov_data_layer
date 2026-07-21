@@ -26,7 +26,7 @@ from core.index.qdrant_store import QdrantStore
 from core.ingest.embedder import Embedder
 from core.observability import configure as configure_observability
 from core.persistence import DatabaseClient
-from core.persistence.repository import ReferenceRepository
+from core.persistence.repository import DocumentRepository, ReferenceRepository
 
 load_dotenv()
 
@@ -189,12 +189,9 @@ async def _ingest_single_document(
 
         # Step C: Get doc_uuid from DB (UUID, not external_id!)
         doc_uuid = ""
-        row = await db.fetchval(
-            "SELECT id FROM document WHERE publish_id = $1",
-            publish_id,
-        )
-        if row:
-            doc_uuid = str(row)
+        ref_repo_local = ReferenceRepository(db)
+        doc_repo = DocumentRepository(db, ref_repo_local)
+        doc_uuid = await doc_repo.get_document_uuid(publish_id) or ""
         print(f"  doc_uuid: {doc_uuid[:8] if doc_uuid else 'EMPTY'}...")
 
         # Step D: Resolve jurisdiction_id + region_id from organization
@@ -235,22 +232,22 @@ async def _update_document_jurisdiction_region(
     """
     if not organization_id or not doc_uuid:
         return None
-    org_row = await db.fetchrow(
-        "SELECT jurisdiction_id, region_id FROM organization "
-        "WHERE external_id = $1 AND source_id = $2::uuid",
-        organization_id,
-        source_uuid,
+    ref_repo = ReferenceRepository(db)
+    doc_repo = DocumentRepository(db, ref_repo)
+
+    org_data = await ref_repo.get_organization_data(
+        external_id=organization_id,
+        source_id=source_uuid,
     )
-    if not org_row:
+    if not org_data:
         return None
-    jur_id = str(org_row["jurisdiction_id"]) if org_row["jurisdiction_id"] else None
-    reg_id = str(org_row["region_id"]) if org_row["region_id"] else None
+    jur_id = org_data.get("jurisdiction_id")
+    reg_id = org_data.get("region_id")
     if jur_id or reg_id:
-        await db.execute(
-            "UPDATE document SET jurisdiction_id = $1::uuid, region_id = $2::uuid WHERE id = $3::uuid",
-            jur_id,
-            reg_id,
-            doc_uuid,
+        await doc_repo.update_document_jurisdiction_region(
+            doc_uuid=doc_uuid,
+            jurisdiction_id=jur_id,
+            region_id=reg_id,
         )
         print(
             f"  jurisdiction_id={jur_id[:8] if jur_id else '-'}  region_id={reg_id[:8] if reg_id else '-'}"

@@ -1,0 +1,13 @@
+refactor: replace direct SQL queries outside persistence/ with repository calls
+
+- adapters/pravo/adapter/stub/ingest.py: replace SELECT id FROM document
+  with DocumentRepository.get_document_uuid()
+- adapters/pravo/adapter/production/ingest.py: replace SELECT id FROM document
+  with DocumentRepository.get_document_uuid()
+- scripts/fixtures_ingest_pipeline.py: replace SELECT/UPDATE with
+  ReferenceRepository.get_organization_data() and
+  DocumentRepository.update_document_jurisdiction_region()
+- core/persistence/repository/document_repo.py: add
+  update_document_jurisdiction_region() method
+- core/persistence/repository/reference_repo.py: add
+  get_organization_data() method

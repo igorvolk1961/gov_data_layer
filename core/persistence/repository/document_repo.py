@@ -223,6 +223,36 @@ class DocumentRepository:
                     topic_id,
                 )
 
+    async def update_document_jurisdiction_region(
+        self,
+        doc_uuid: str,
+        jurisdiction_id: str | None,
+        region_id: str | None,
+    ) -> None:
+        """Update jurisdiction_id and/or region_id on a document row.
+
+        Args:
+            doc_uuid: Internal UUID of the document.
+            jurisdiction_id: UUID of the jurisdiction (or None to leave unchanged).
+            region_id: UUID of the region (or None to leave unchanged).
+
+        Raises:
+            ConnectionError: If not connected.
+        """
+        if jurisdiction_id is None and region_id is None:
+            return
+        await self._db.execute(
+            """
+            UPDATE document
+            SET jurisdiction_id = COALESCE($1::uuid, jurisdiction_id),
+                region_id = COALESCE($2::uuid, region_id)
+            WHERE id = $3::uuid
+            """,
+            jurisdiction_id,
+            region_id,
+            doc_uuid,
+        )
+
     async def get_document_uuid(
         self,
         publish_id: str,

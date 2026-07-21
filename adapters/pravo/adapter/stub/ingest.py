@@ -69,12 +69,14 @@ class StubIngestHandler(BaseIngestHandler):
                     # 2. Get doc_uuid from DB (real UUID, not external ID)
                     doc_uuid = ""
                     if adapter._db is not None:
-                        row = await adapter._db.fetchval(
-                            "SELECT id FROM document WHERE publish_id = $1",
-                            publish_id,
+                        from core.persistence.repository import (
+                            DocumentRepository,
+                            ReferenceRepository,
                         )
-                        if row:
-                            doc_uuid = str(row)
+
+                        ref_repo = ReferenceRepository(adapter._db)
+                        doc_repo = DocumentRepository(adapter._db, ref_repo)
+                        doc_uuid = await doc_repo.get_document_uuid(publish_id) or ""
 
                     # 3. Get text via OCR (from cache in stub mode)
                     text = await adapter.get_content(document_id)  # type: ignore[attr-defined]
