@@ -198,7 +198,7 @@ class StubAdapter(SourceAdapter):
                     jurisdiction=doc.jurisdiction,
                     region=doc.region,
                     topic=doc.topic,
-                    organization=[doc.organization] if doc.organization else [],
+                    organization=doc.organization,
                     created_at=doc.created_at,
                     legal_status=doc.legal_status,
                     confidence=ConfidenceSignals(

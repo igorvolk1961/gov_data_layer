@@ -329,7 +329,7 @@ class TestGetDocumentDetail:
         assert isinstance(detail.jurisdiction, str | None)
         assert isinstance(detail.region, str | None)
         assert isinstance(detail.topic, list)
-        assert isinstance(detail.organization, list)
+        assert isinstance(detail.organization, str | None)
         assert isinstance(detail.legal_status, LegalStatus)
 
     async def test_citations_and_toc_are_present(self, service: ODLService) -> None:

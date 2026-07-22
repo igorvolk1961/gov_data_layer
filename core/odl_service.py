@@ -389,7 +389,7 @@ class ODLService(ODLServiceProtocol):
                     source_name = ""
                     jurisdiction: str | None = None
                     topic_list: list[str] = []
-                    organization_list: list[str] = []
+                    organization: str | None = None
                     document_number: str | None = None
                     document_type: str | None = None
                     legal_status_val = LegalStatus.UNKNOWN
@@ -412,9 +412,7 @@ class ODLService(ODLServiceProtocol):
                                     source_name = doc_meta.source.name if doc_meta.source else ""
                                     jurisdiction = doc_meta.jurisdiction
                                     # region и topic берём из чанка, не из БД
-                                    organization_list = (
-                                        [doc_meta.organization] if doc_meta.organization else []
-                                    )
+                                    organization = doc_meta.organization
                                     document_number = doc_meta.document_number
                                     document_type = doc_meta.document_type
                                     legal_status_val = doc_meta.legal_status
@@ -451,7 +449,7 @@ class ODLService(ODLServiceProtocol):
                         jurisdiction=jurisdiction,
                         region=region,
                         topic=topic_list,
-                        organization=organization_list,
+                        organization=organization,
                         created_at=datetime.now(timezone.utc),
                         legal_status=legal_status_val,
                         document_number=document_number,
@@ -579,13 +577,12 @@ class ODLService(ODLServiceProtocol):
                 jurisdiction=doc_meta.jurisdiction,
                 region=doc_meta.region,
                 topic=doc_meta.topic,
-                organization=[doc_meta.organization] if doc_meta.organization else [],
+                organization=doc_meta.organization,
                 created_at=doc_meta.created_at,
                 valid_from=doc_meta.valid_from,
                 valid_to=doc_meta.valid_to,
                 legal_status=doc_meta.legal_status,
                 citations=citations,
-                toc=toc,
             )
             span.set_output({"document_id": detail.id, "title": detail.title})
 

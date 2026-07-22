@@ -94,6 +94,7 @@ omit = [
     "core/api/server.py",
     "core/api/__init__.py",
     "adapters/stub/stub_adapter.py",
+    "tests/integration/*",
 ]
 
 [tool.coverage.report]

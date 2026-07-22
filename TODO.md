@@ -1,39 +1,127 @@
-# TODO
+# TODO — v0.2.0 (develop)
 
-## Health endpoint issues
+> Актуальные задачи и известные проблемы текущей версии.
+> Решённые задачи v0.1.0 удалены. История изменений — в [`docs/changelog/v0.2.0.md`](docs/changelog/v0.2.0.md).
 
-### 1. Redis shows "unavailable" despite being up in Docker
+---
 
-**Root cause:** [`CacheClient`](core/cache/__init__.py) uses lazy connection — `_available` is initialized to `False` and only set to `True` after the first successful `ping()` in `_connect()`. Since no cache operation (get/set) has been performed by the time `/health` is called, `cache.available` remains `False`.
+## P0 — Блокирующие (v0.2.0)
 
-**Fix needed:** In the `/health` endpoint ([`core/api/rest_server.py:154`](core/api/rest_server.py:154)), actively attempt to connect to Redis (call `cache._connect()` or a new `cache.ping()` method) instead of relying on the passive `available` flag.
+### 1. Cache-aside — проверить end-to-end
 
-### 2. LangFuse shows "unavailable" despite being up in Docker
+**Симптом:** Кэш реализован, но не проверен интеграционно.
 
-**Root cause:** Either:
-- The tracer was initialized as [`FileFallbackTracer`](core/observability/tracer.py:363) (LangFuse API keys not set or invalid), so `check_health()` always returns `False`
-- OR [`LangFuseTracer.check_health()`](core/observability/tracer.py:298) calls `_verify_connection()` → `auth_check()`, but the `langfuse_host` in config points to a URL not reachable from the container network
+**Проверить:**
+- `search_documents` — кэш 5 минут
+- `get_document_detail` — кэш 1 час
+- `list_topics` — кэш 1 час
+- `get_toc` — кэш 1 час
 
-**Fix needed:** Verify LangFuse configuration (`langfuse_host`, `public_key`, `secret_key`) and ensure the host URL is accessible from the application container.
+---
 
-### 3. Tracing middleware crashes on requests with query parameters
+## P1 — Инфраструктура
 
-**Root cause:** In [`_TracingASGIMiddleware`](core/api/rest_server.py:76), `dict(scope.get("query_string", b"").decode())` fails when the query string contains parameters (e.g., `?parent_id=t1`), because `dict()` expects an iterable of key-value pairs, not a raw string.
+### 3. Docker image — сборка и тестирование
 
-**Fix needed:** Replace `dict(...)` with `dict(parse_qsl(scope.get("query_string", b"").decode()))` using `urllib.parse.parse_qsl`.
+**Текущий статус:** Dockerfile есть, образ не собран и не протестирован.
 
-## MCP client script can't find MCP service
+**Задачи:**
+- [ ] Собрать образ: `docker build -t gov-data-layer .`
+- [ ] Запустить через `docker-compose up`
+- [ ] Проверить healthcheck
+- [ ] Задокументировать результат в README.md
 
-### 4. [`scripts/mcp_list_tools.py`](scripts/mcp_list_tools.py) fails to connect to the MCP SSE endpoint
+### 4. LangFuse healthcheck — verify configuration
 
-**Symptoms:**
-Running `uv run python scripts/mcp_list_tools.py` throws a connection error — the script cannot reach the MCP service at `http://localhost:8000/mcp`.
+**Симптом:** LangFuse может показывать "unavailable" из-за неверной конфигурации хоста.
 
-**Possible root causes:**
-- The MCP server is created in [`create_mcp_server()`](core/api/mcp_server.py:31) and mounted as an SSE app under `/mcp` in [`core/main.py:183-184`](core/main.py:183-184). If the server isn't running (or started on a different host/port), the SSE client in [`mcp_list_tools.py`](scripts/mcp_list_tools.py:42) cannot connect.
-- The [`mcp_server.sse_app(mount_path="/mcp")`](core/main.py:183) call generates an internal Starlette ASGI app, but the relationship between the `mount_path` parameter and the FastAPI `app.mount("/mcp", ...)` on the next line may conflict — the SSE endpoint might be served at a different path than expected.
-- The `_TracingASGIMiddleware` in [`rest_server.py:54`](core/api/rest_server.py:54) skips tracing for `/mcp` paths, so a crash inside the SSE app would not be visible in traces.
-- CORS or networking issues when connecting from the client process.
+**Задачи:**
+- [ ] Проверить `langfuse_host` в `.env`
+- [ ] Проверить, что URL достижим из контейнера
+- [ ] Если LangFuse не нужен — рассмотреть удаление из обязательных сервисов
 
-**Fix needed:**
-Verify the actual URL path the SSE app listens on. Test with `curl -N http://localhost:8000/mcp` or a direct SSE client. Ensure the server is started before running the client script. If the `mount_path` in `sse_app()` and the `app.mount()` path disagree, align them.
+---
+
+## P2 — Качество кода
+
+### 5. `_check_missing_region` — заглушка
+
+**Файл:** [`core/odl_service.py:825-855`](core/odl_service.py:825-855)
+
+**Проблема:** Всегда возвращает `(None, None)`. Поля `missing_context` и `suggested_clarification_prompt` никогда не заполняются.
+
+**Задачи:**
+- [ ] Реализовать детекцию: если регион не указан, но есть региональные документы → `missing_context = "region"`
+- [ ] Сгенерировать `suggested_clarification_prompt`
+
+### 6. `total_count` — точность при большом количестве чанков
+
+**Проблема:** Qdrant может вернуть приблизительное `total_count` при `exact=false`. Нужно проверить точность на 1000+ чанках.
+
+### 7. `OfficialDocument.organization: str` — API должен возвращать строку
+
+**Проблема:** В некоторых местах (например, `SearchResult.organization` и `DocumentDetail.organization`) тип объявлен как `list[str]`, хотя каноническая модель хранит `str`. Для гражданского сценария достаточно одной организации.
+
+**Задачи:**
+- [ ] Исправить `SearchResult.organization` с `list[str]` на `str | None`
+- [ ] Исправить `DocumentDetail.organization` с `list[str]` на `str | None`
+- [ ] Обновить тесты
+
+### 8. Два источника истины для схемы БД
+
+**Проблема:** Liquibase XML + Python get-or-create pattern. Миграции могут расходиться с кодом.
+
+**Решение на v0.2.0:** Документировано как известное ограничение. Для production — Liquibase CLI + CI-валидация.
+
+### 9. Hardcoded document IDs в скриптах
+
+**Файл:** [`scripts/fixtures_ingest_pipeline.py:35`](scripts/fixtures_ingest_pipeline.py:35)
+
+**Проблема:** Список `PUBLISH_IDS` зашит в коде. Нельзя легко добавить новый документ.
+
+**Решение:** Вынести в конфигурационный файл или аргумент CLI.
+
+---
+
+## P3 — Долгосрочные улучшения (v0.3.0)
+
+### 10. PDF → OCR — bottleneck
+
+**Проблема:** Все 6 документов требуют OCR. Для production с тысячами документов — неприемлемо.
+
+**Идея v0.3.0:** Title-based extraction без OCR. Использовать названия документов из XML API pravo.gov.ru.
+
+Подробнее: [`plans/problems.md`](plans/problems.md)
+
+### 11. Нет консолидированных версий документов
+
+**Проблема:** Источник не предоставляет итоговые версии. Только изменения («О внесении изменений в...»).
+
+**Идея v0.3.0:** Детекция зависимостей из названий через regexp. Построение графа изменений.
+
+### 12. Нет ленивого инжеста
+
+**Проблема:** Все документы инжестятся сразу. Если документов 10 000 — нерентабельно.
+
+**Идея v0.3.0:** Pull model — документ инжестится при первом запросе. Очередь с оценкой времени ожидания.
+
+### 13. Нет автоматического выявления зависимостей
+
+**Проблема:** Связи «документ A отменяет B» не детектируются автоматически.
+
+**Идея v0.3.0:** Парсинг названий: «О признании утратившим силу приказа...» → извлечение target document.
+
+### 14. SLO-замеры
+
+**Проблема:** Латентность, токен-бюджет, свежесть — не измерены.
+
+**Задачи v0.3.0:**
+- [ ] Нагрузочное тестирование (locust / k6)
+- [ ] Измерение p95 latency для каждого пути
+- [ ] Измерение token budget
+
+### 15. MCP healthcheck
+
+**Проблема:** Нет healthcheck для MCP-сервера.
+
+**Решение:** Добавить MCP tool `check_health` или проверять через отдельный endpoint.

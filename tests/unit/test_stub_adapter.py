@@ -118,7 +118,7 @@ class TestSearch:
         assert r.jurisdiction == "федеральная"
         assert r.region is None
         assert r.topic == ["общие положения"]
-        assert r.organization == ["Минюст"]
+        assert r.organization == "Минюст"
 
 
 # ──────────────────────────────────────────────

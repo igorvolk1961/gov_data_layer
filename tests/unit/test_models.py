@@ -341,7 +341,7 @@ class TestSearchResult:
             jurisdiction="федеральная",
             region="Московская область",
             topic=["налоги", "земельное право"],
-            organization=["ФНС", "Минюст"],
+            organization="ФНС",
             created_at=now,
             legal_status=LegalStatus.ACTIVE,
             confidence=cs,
@@ -350,7 +350,7 @@ class TestSearchResult:
         assert result.jurisdiction == "федеральная"
         assert result.region == "Московская область"
         assert result.topic == ["налоги", "земельное право"]
-        assert result.organization == ["ФНС", "Минюст"]
+        assert result.organization == "ФНС"
         assert result.confidence.retrieval_relevance == 0.95
         assert result.confidence.source_availability == SourceAvailability.AVAILABLE
 
@@ -374,7 +374,7 @@ class TestSearchResult:
         assert result.jurisdiction is None
         assert result.region is None
         assert result.topic == []
-        assert result.organization == []
+        assert result.organization is None
 
     def test_serialize_roundtrip(self) -> None:
         now = datetime.now(timezone.utc)
@@ -392,7 +392,7 @@ class TestSearchResult:
             jurisdiction="федеральная",
             region="Московская область",
             topic=["налоги"],
-            organization=["ФНС"],
+            organization="ФНС",
             created_at=now,
             legal_status=LegalStatus.MODIFIED,
             confidence=cs,
@@ -402,7 +402,7 @@ class TestSearchResult:
         assert d["jurisdiction"] == "федеральная"
         assert d["region"] == "Московская область"
         assert d["topic"] == ["налоги"]
-        assert d["organization"] == ["ФНС"]
+        assert d["organization"] == "ФНС"
         assert d["confidence"]["source_availability"] == "degraded"
         assert d["confidence"]["retrieval_relevance"] == 0.5
 
@@ -516,7 +516,7 @@ class TestDocumentDetail:
         assert detail.jurisdiction is None
         assert detail.region is None
         assert detail.topic == []
-        assert detail.organization == []
+        assert detail.organization is None
         assert detail.created_at == now
         assert detail.valid_from is None
         assert detail.valid_to is None
@@ -541,7 +541,7 @@ class TestDocumentDetail:
             jurisdiction="федеральная",
             region="Московская область",
             topic=["налоги", "земельное право"],
-            organization=["ФНС", "Минюст"],
+            organization="ФНС",
             created_at=now,
             valid_from=datetime(2025, 1, 1, tzinfo=timezone.utc),
             valid_to=datetime(2026, 12, 31, tzinfo=timezone.utc),
@@ -551,7 +551,7 @@ class TestDocumentDetail:
         assert detail.jurisdiction == "федеральная"
         assert detail.region == "Московская область"
         assert detail.topic == ["налоги", "земельное право"]
-        assert detail.organization == ["ФНС", "Минюст"]
+        assert detail.organization == "ФНС"
         assert detail.valid_from == datetime(2025, 1, 1, tzinfo=timezone.utc)
         assert detail.valid_to == datetime(2026, 12, 31, tzinfo=timezone.utc)
         assert len(detail.citations) == 1

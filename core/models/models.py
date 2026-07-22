@@ -285,9 +285,10 @@ class SearchResult(BaseModel):
         description="Тематические рубрики. "
         "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
     )
-    organization: list[str] = Field(
-        default_factory=list,
-        description="Органы, принявшие документ. "
+    organization: str | None = Field(
+        default=None,
+        description="Орган, принявший документ. "
+        "Пример: 'Минтруд России'. "
         "Позволяет агенту фильтровать результаты без N+1 get_document_detail().",
     )
     created_at: datetime = Field(description="Дата загрузки документа в индекс (свежесть копии)")
@@ -367,9 +368,9 @@ class DocumentDetail(BaseModel):
         default_factory=list,
         description="Тематические рубрики. Документ может относиться к нескольким рубрикам.",
     )
-    organization: list[str] = Field(
-        default_factory=list,
-        description="Органы, принявшие документ. Документ может быть принят несколькими органами.",
+    organization: str | None = Field(
+        default=None,
+        description="Орган, принявший документ. Пример: 'Минтруд России'.",
     )
     created_at: datetime = Field(description="Дата загрузки документа в индекс (свежесть копии)")
     valid_from: datetime | None = Field(default=None, description="Дата начала юридической силы")
