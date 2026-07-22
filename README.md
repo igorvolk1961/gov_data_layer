@@ -47,18 +47,6 @@ cp .env.example .env
 uv sync
 ```
 
-### 4. Инициализация данных
-
-Загрузить справочные данные и проиндексировать документы:
-
-```bash
-uv run python scripts/fixtures_ingest_pipeline.py
-```
-
-Скрипт:
-- Очищает БД и Qdrant
-- Загружает рубрики, организации, типы документов из `fixtures/`
-- Индексирует 6 документов через PravoAdapter (stub)
 
 ### 5. Запуск сервера
 
@@ -100,7 +88,10 @@ docker compose up
 uv run python scripts/fixtures_ingest_pipeline.py
 ```
 
-Загружает 6 документов Минтруда в PostgreSQL и Qdrant.
+Скрипт:
+- Очищает БД и Qdrant
+- Загружает рубрики, организации, типы документов из `fixtures/`
+- Индексирует 6 документов через PravoAdapter (stub)
 
 ### Шаг 2: Поиск документов
 
@@ -152,7 +143,7 @@ uv run python scripts/mcp_list_tools.py
 uv run python scripts/mcp_verify.py
 ```
 
-**Ожидаемый результат:** список из 4 инструментов: `search_documents`, `get_document_detail`, `list_topics`, `get_toc`.
+**Ожидаемый результат:** список из 2 инструментов: `search_documents`, `get_document_detail`.
 
 ---
 
@@ -197,11 +188,8 @@ flowchart LR
 | GET | `/health` | Статус Redis, PostgreSQL, Qdrant, LangFuse |
 | POST | `/api/v1/search` | Поиск документов |
 | GET | `/api/v1/documents/{source_id}` | Полная карточка документа |
-| GET | `/api/v1/topics` | Рубрикатор |
-| GET | `/api/v1/documents/{document_id}/toc` | Оглавление |
 | GET | `/api/v1/admin/reference-counts` | Счётчики справочников |
 | GET | `/api/v1/admin/qdrant/collections` | Статус коллекций Qdrant |
-| GET | `/api/v1/admin/documents/{publish_id}/status` | Статус документа |
 
 ### MCP Tools
 
@@ -209,8 +197,6 @@ flowchart LR
 |------|----------|
 | `search_documents` | Поиск документов по текстовому запросу с фильтрацией |
 | `get_document_detail` | Полная карточка документа с цитатами |
-| `list_topics` | Просмотр иерархического рубрикатора |
-| `get_toc` | Оглавление документа |
 
 ---
 
@@ -279,10 +265,11 @@ scripts/               # CLI-скрипты для демо и отладки
 
 ## Известные ограничения v0.2.0
 
-1. **OCR-зависимость** — все документы требуют OCR. Для production нужен конвейер без OCR.
+1. **OCR-зависимость** — все документы требуют OCR. Для production нужен конвейер без обязательного фонового OCR (запланирован в версии v0.3.0).
 2. **Stub-режим** — PravoAdapter работает в режиме заглушки (6 документов).
 3. **Docker image не собран** — не протестирован.
 4. **`_check_missing_region` — заглушка** — `missing_context` не заполняется.
 5. **Нет SLO-замеров** — latency/token budget не измерены.
+6. **Проблемы smart_chunker** — требуется доработка собственного чанкера для реализации обработки нескольких документов в одном файле .
 
 Полный список — в [`TODO.md`](TODO.md) и [`docs/specification.md`](docs/specification.md#7-известные-проблемы-v020).

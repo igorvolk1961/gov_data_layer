@@ -1,9 +1,5 @@
-v0.2.0: Documentation overhaul + SearchResult.organization fix
+v0.2.0: Updated REPORT.md, TODO.md with v0.3.0 concept
 
-- Updated specification to v0.2.0: new ConfidenceSignals (topic_relevance, last_verified_at), simplified LegalStatus (active/not_active), cleaned SearchContext (removed topic)
-- Added architecture diagrams: class diagram, DB schema ER, pipeline sequence diagrams
-- Added CHANGELOG v0.2.0 with v0.3.0 roadmap
-- Rewrote SKILL.md to match actual MCP tools (2 tools) without abbreviations
-- Updated README.md: installation emphasis + demo scripts workflow
-- Cleaned TODO.md: removed resolved issues, regrouped by priority
-- Fixed SearchResult.organization and DocumentDetail.organization types from list[str] to str | None
+- REPORT.md: fixed end-to-end and repo status, added progress comparison table
+- TODO.md: added detailed v0.3.0 concept with 5 workers and pipeline migration map
+- Changlog: restored brief v0.3.0 section
