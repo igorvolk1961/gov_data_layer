@@ -1,5 +1,0 @@
-v0.2.0: Updated REPORT.md, TODO.md with v0.3.0 concept
-
-- REPORT.md: fixed end-to-end and repo status, added progress comparison table
-- TODO.md: added detailed v0.3.0 concept with 5 workers and pipeline migration map
-- Changlog: restored brief v0.3.0 section

@@ -281,6 +281,35 @@ class DocumentRepository:
             return None
         return await self._row_to_document(row)
 
+    async def has_regional_docs_for_topics(self, topic_ids: list[str]) -> bool:
+        """Check if any documents linked to the given topics have a region.
+
+        Args:
+            topic_ids: List of topic UUIDs to check.
+
+        Returns:
+            True if at least one document related to these topics has a region_id.
+        """
+        if not topic_ids:
+            return False
+        try:
+            row = await self._db.fetchval(
+                """
+                SELECT EXISTS(
+                  SELECT 1 FROM document d
+                  JOIN document_section ds ON ds.document_id = d.id
+                  JOIN section_topic st ON st.section_id = ds.id
+                  WHERE st.topic_id = ANY($1::uuid[])
+                    AND d.region_id IS NOT NULL
+                  LIMIT 1
+                )
+                """,
+                topic_ids,
+            )
+            return bool(row)
+        except Exception:
+            return False
+
     async def get_document_by_id(
         self,
         doc_uuid: str,

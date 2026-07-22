@@ -53,16 +53,7 @@ docker compose up
 
 ## P2 — Качество кода
 
-### 6. `_check_missing_region` — заглушка
-
-**Файл:** [`core/odl_service.py:825`](core/odl_service.py:825)
-
-Всегда возвращает `(None, None)`. Поля `missing_context` и `suggested_clarification_prompt` никогда не заполняются.
-
-- [ ] Реализовать детекцию: если регион не указан, но есть региональные документы → `missing_context = "region"`
-- [ ] Сгенерировать `suggested_clarification_prompt`
-
-### 7. `total_count` — точность при большом количестве чанков
+### 6. `total_count` — точность при большом количестве чанков
 
 Qdrant может вернуть приблизительное `total_count` при `exact=false`. Проверить точность на 1000+ чанках.
 

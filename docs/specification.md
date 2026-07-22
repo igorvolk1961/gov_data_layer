@@ -459,9 +459,9 @@ class Citation(BaseModel):
    - [`odl_service.py:296-298`](core/odl_service.py:296-298): Qdrant вызывается с `limit=max_results + offset` без параметра `offset`
    - Для глубокой пагинации (offset=1000) фетчится 1010 точек, из которых 1000 отбрасываются
 
-6. **[MEDIUM] `_check_missing_region` — заглушка**
-   - [`odl_service.py:825-855`](core/odl_service.py:825-855): всегда возвращает `(None, None)`
-   - Поля `missing_context` и `suggested_clarification_prompt` никогда не заполняются
+6. **[MEDIUM] `_check_missing_region` — без E2E-проверки**
+   - Реализовано: проверяет наличие документов с регионом по рубрикам запроса через `section_topic` JOIN
+   - Не проверено на реальных данных — нужны документы одной тематики с разной юрисдикцией
 
 7. **[LOW] Дублирование импорта SearchContext**
    - [`mcp_server.py:147`](core/api/mcp_server.py:147): повторный импорт внутри `get_document_detail`
@@ -497,7 +497,7 @@ class Citation(BaseModel):
 
 | # | Проблема | Описание |
 |---|----------|----------|
-| 4 | **`_check_missing_region` — заглушка** | Поля `missing_context` и `suggested_clarification_prompt` никогда не заполняются |
+| 4 | **`_check_missing_region` — без E2E-проверки** | Реализована, не проверена на реальных данных (нужны документы одной тематики с разной юрисдикцией) |
 | 5 | **Нет SLO-замеров** | Латентность, токен-бюджет, свежесть — не измерены |
 | 6 | **`SearchResult.organization: list[str]`** | Должен быть `str` (как в канонической модели). Для гражданского сценария достаточно одной организации. См. [`TODO.md`](TODO.md) |
 | 7 | **Нет healthcheck для MCP-сервера** | MCP endpoint не проверяется через `/health` |

@@ -300,9 +300,6 @@ class ODLService(ODLServiceProtocol):
                     if region_result is not None:
                         ctx.region_id, ctx.region_confidence = region_result
 
-            # Check if region context is missing (regional docs exist but no region specified)
-            missing_context, suggested_clarification = await self._check_missing_region(ctx, query)
-
             try:
                 embedder = self._embedder_lazy
                 query_vector = await embedder.embed_query(query)
@@ -319,6 +316,11 @@ class ODLService(ODLServiceProtocol):
                         _topic_filter = [m["topic_id"] for m in _query_topic_matches]
                 except Exception:
                     pass  # graceful degradation — no topic filtering
+
+                # Check if region context is missing (regional docs exist for query topics)
+                missing_context, suggested_clarification = await self._check_missing_region(
+                    ctx, _topic_filter or []
+                )
 
                 qspan = _child("search.qdrant")
                 with qspan:
@@ -782,28 +784,39 @@ class ODLService(ODLServiceProtocol):
     async def _check_missing_region(
         self,
         ctx: SearchContext,
-        _query: str = "",
+        topic_ids: list[str],
     ) -> tuple[str | None, str | None]:
-        """Check if region context is missing when regional docs exist.
+        """Check if region context is missing when regional docs exist for query topics.
 
-        If the query has no region specified but the search context includes
-        topic/rubric filters, checks PostgreSQL for jurisdiction distribution
-        of documents under those rubrics. If regional documents exist,
-        suggests the agent ask for the user's region.
+        If the query has no region specified, checks PostgreSQL for documents
+        that have sections linked to the query's topics AND have a region_id set.
+        If such documents exist, suggests the agent ask for the user's region.
+
+        Args:
+            ctx: Search context (checks if region already specified).
+            topic_ids: Topic UUIDs determined as semantically close to the query.
 
         Returns:
             Tuple of (missing_context_type, suggested_clarification_prompt).
-            Both None if region is already specified or no rubric context.
+            Both None if region is already specified or no regional docs found.
         """
-        if ctx.region is not None:
+        if ctx.region is not None or ctx.region_id is not None:
             return None, None
-        ref_repo = self._ref_repo_lazy
-        if ref_repo is None:
+        if not topic_ids:
+            return None, None
+        doc_repo = self._doc_repo_lazy
+        if doc_repo is None:
             return None, None
         try:
-            # Stub: simplified check — actual implementation would query
-            # document_jurisdiction distribution for the requested rubrics
-            _ = ref_repo  # placeholder
+            has_regional = await doc_repo.has_regional_docs_for_topics(topic_ids)
+            if has_regional:
+                missing = "region"
+                prompt = (
+                    "Для уточнения запроса, пожалуйста, укажите Ваш регион "
+                    "проживания (например: Москва, Московская область, "
+                    "Санкт-Петербург, Краснодарский край)."
+                )
+                return missing, prompt
             return None, None
         except Exception:
             logger.exception("Failed to check missing region")
